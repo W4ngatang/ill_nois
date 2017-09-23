@@ -91,9 +91,8 @@ def main(arguments):
     parser.add_argument("--early_abort", help="1 if should abort if not making progress", type=int, default=0)
     parser.add_argument("--n_binary_search_steps", help="Number of steps in binary search for optimal c", type=int, default=5)
 
-    # Ensemble options
-    parser.add_argument("--n_mwu_rounds", help="Number of rounds of MWU", type=int, default=5)
-    parser.add_argument("--mwu_eta", help="MWU update constant, should be <= .5", type=int, default=.1)
+    parser.add_argument("--n_mwu_steps", help="Number of steps for multiplicative weight update", type=int, default=5)
+    parser.add_argument("--mwu_eta", help="Penalization constant for MWU", type=float, default=.1)
 
     args = parser.parse_args(arguments)
 
@@ -163,8 +162,7 @@ def main(arguments):
     if args.train:
         log(log_fh, "Training...")
         with h5py.File(args.data_path + 'tr.hdf5', 'r') as fh:
-            tr_data = Dataset(fh['ins'][:], fh['outs'][:], 
-                                args.batch_size, args)
+            tr_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
         model.train_model(args, tr_data, val_data, log_fh)
         log(log_fh, "Done!")
         del tr_data
@@ -180,15 +178,13 @@ def main(arguments):
         log(log_fh, "Generating noise for images...")
         with h5py.File(args.im_file, 'r') as fh:
             clean_ims = fh['ins'][:]
-            te_data = Dataset(fh['ins'][:], fh['outs'][:], 
-                        args.generator_batch_size, args)
+            te_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
         log(log_fh, "\tLoaded %d images!" % clean_ims.shape[0])
 
         # Choose a class to target
         if args.target == 'random':
             data = Dataset(clean_ims, 
-                np.random.randint(args.n_classes, size=te_data.n_ins), 
-                args.generator_batch_size, args)
+                np.random.randint(args.n_classes, size=te_data.n_ins), args.generator_batch_size, args)
             log(log_fh, "\t\ttargeting random class")
         elif args.target == 'least':
             preds = model.predict(te_data)
@@ -204,8 +200,7 @@ def main(arguments):
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log(log_fh, "\t\ttargeting next likely class")
         elif args.target == 'none':
-            data = Dataset(clean_ims, te_data.outs.numpy().copy(), 
-                            args.generator_batch_size, args)
+            data = Dataset(clean_ims, te_data.outs.numpy().copy(), args.generator_batch_size, args)
             log(log_fh, "\t\ttargeting no class")
         else:
             raise NotImplementedError
@@ -233,15 +228,14 @@ def main(arguments):
                 alex = alex.cuda()
                 vgg = vgg.cuda()
             model = [resnet, densenet, alex, vgg]
-            args.n_models = len(model)
 
             # build the generator
-            generator = EnsembleGenerator(args, model, data, te_data.outs, 
-                    log_fh, (mean, std))
-            log(log_fh, ("\tBuilt ensemble generator with "
+            generator = EnsembleGenerator(args, model, data, te_data.outs, log_fh, (mean, std))
+            log(log_fh, ("\tBuilt ensemble optimization generator with "
                             "ResNet, Densenet, AlexNet, and VGG"))
         else:
             raise NotImplementedError
+
 
         # Generate the corrupt images
         # NB: noise will be in the input space,
@@ -255,10 +249,8 @@ def main(arguments):
 
         # Compute the corruption rate
         log(log_fh, "Computing corruption rate...")
-        corrupt_data = Dataset(corrupt_ims, te_data.outs, 
-                                args.generator_batch_size, args)
-        target_data = Dataset(corrupt_ims, data.outs, 
-                                args.generator_batch_size, args)
+        corrupt_data = Dataset(corrupt_ims, te_data.outs, args.generator_batch_size, args)
+        target_data = Dataset(corrupt_ims, data.outs, args.generator_batch_size, args)
         _, clean_top1, clean_top5 = model.evaluate(te_data)
         _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
         _, target_top1, target_top5 = model.evaluate(target_data)

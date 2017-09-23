@@ -33,7 +33,7 @@ class EnsembleGenerator(nn.Module):
         self.n_models = len(models)
         w = torch.ones(self.n_models) 
         self.weighting = Variable(torch.ones(self.n_models) / self.n_models)
-        #self.weight_experts(models, data, targs, args, fh)
+        self.weight_experts(models, data, targs, args, fh)
 
     def forward(self, tanh_x, x, w, c, labels, models, mean=None, std=None):
         '''
@@ -243,7 +243,7 @@ class EnsembleGenerator(nn.Module):
         Outputs:
             - w: weight for each expert
         '''
-        T = args.n_mwu_rounds
+        T = args.n_mwu_steps
         mul_weight = 1. - args.mwu_eta
         log(fh, "\tWeighting ensemble models...")
 
@@ -268,7 +268,9 @@ class EnsembleGenerator(nn.Module):
                 w[i] *= (mul_weight ** ((targs.size()[0] - int(n_correct))/ targs.size()[0]))
 
             self.weighting = Variable(w / w.sum())
-        log(fh, "\tFinished weighting experts! Average weight: %07.3f" % 
-                (self.weighting.mean().data[0]))
+        log(fh, "\tFinished weighting experts! Min weight: %07.3f Max weight: %07.3f" % 
+                (self.weighting.min().data[0], self.weighting.max().data[0]))
+
+        pdb.set_trace()
 
         return
