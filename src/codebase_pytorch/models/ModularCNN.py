@@ -155,28 +155,3 @@ class ModularCNN(nn.Module):
             total_correct += preds.eq(targs.data).cpu().sum()
         return total_loss / data.n_ins, \
                 100. * total_correct / data.n_ins
-
-    def predict(self, data):
-        '''
-        Get predictions for data
-        '''
-        self.eval()
-        predictions = []
-        for batch_idx in xrange(data.n_batches):
-            ins, targs = data[batch_idx]
-            if self.use_cuda:
-                ins, targs = ins.cuda(), targs.cuda()
-            ins, targs = Variable(ins, volatile=True), Variable(targs)
-            outs = self(ins)
-            predictions.append(outs.data.max(1)[1].cpu().numpy())
-        return np.vstack(predictions)
-
-    def get_gradient(self, ins, targs):
-        self.eval()
-        if self.use_cuda:
-            ins, targs = ins.cuda(), targs.cuda()
-        ins, targs = Variable(ins, requires_grad=True), Variable(targs)
-        outs = self(ins)
-        loss = F.cross_entropy(outs, targs)
-        loss.backward(retain_variables=True)
-        return ins.grad.data.cpu().numpy()

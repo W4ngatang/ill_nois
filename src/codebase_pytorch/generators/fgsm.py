@@ -20,7 +20,7 @@ class FGSMGenerator():
         self.alpha = args.alpha
         self.targeted = (args.target != 'none')
 
-    def generate(self, data, model, args, fh=None):
+    def generate(self, data, model):
         '''
         Generate adversarial noise using fast gradient method.
 

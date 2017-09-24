@@ -3,13 +3,13 @@ import pdb
 import sys
 import h5py
 import torch
+import logging as log
 import argparse
 import numpy as np
 from scipy.misc import imsave
 
 # Helper stuff
 from src.codebase_pytorch.utils.dataset import Dataset
-from src.codebase.utils.utils import log as log
 from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
 
 # Classifiers
@@ -22,12 +22,14 @@ from src.codebase_pytorch.models.inception import Inception3
 from src.codebase_pytorch.models.densenet import DenseNet, densenet161
 from src.codebase_pytorch.models.vgg import vgg19_bn
 from src.codebase_pytorch.models.alexnet import AlexNet, alexnet
+from src.codebase_pytorch.models.ensemble import Ensemble
 
 # Generators
 from src.codebase_pytorch.generators.random import RandomNoiseGenerator
 from src.codebase_pytorch.generators.fgsm import FGSMGenerator
 from src.codebase_pytorch.generators.carlini_l2 import CarliniL2Generator
 from src.codebase_pytorch.generators.ensembler import EnsembleGenerator
+from src.codebase_pytorch.generators.optimizer import OptimizationGenerator
 
 def main(arguments):
     '''
@@ -91,12 +93,18 @@ def main(arguments):
     parser.add_argument("--early_abort", help="1 if should abort if not making progress", type=int, default=0)
     parser.add_argument("--n_binary_search_steps", help="Number of steps in binary search for optimal c", type=int, default=5)
 
+    # Multiplicative weight update options
+    parser.add_argument("--mwu_ensemble_weights", help="Use MWU to compute ensemble weights", type=int, default=1)
     parser.add_argument("--n_mwu_steps", help="Number of steps for multiplicative weight update", type=int, default=5)
-    parser.add_argument("--mwu_eta", help="Penalization constant for MWU", type=float, default=.1)
+    parser.add_argument("--mwu_penalty", help="Penalization constant for MWU", type=float, default=.1)
 
     args = parser.parse_args(arguments)
 
-    log_fh = open(args.log_file, 'w')
+    log.basicConfig(format='%(asctime)s: \t%(message)s', level=log.DEBUG, 
+            datefmt='%m/%d/%Y %I:%M:%S %p')
+    file_handler = log.FileHandler(args.log_file)
+    log.getLogger().addHandler(file_handler)
+
     if args.data_path[-1] != '/':
         args.data_path += '/'
     with h5py.File(args.data_path+'params.hdf5', 'r') as fh:
@@ -107,67 +115,81 @@ def main(arguments):
             mean, std = fh['mean'][:], fh['std'][:]
         else:
             mean, std = None, None
-    log(log_fh, "Processing %d types of images of size %d and %d channels" % (args.n_classes, args.im_size, args.n_channels))
+    log.debug("Processing %d types of images of size %d and %d channels" % (args.n_classes, args.im_size, args.n_channels))
 
-    # TODO log more parameters
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
-        log(log_fh, "Using CUDA")
+        log.debug("Using CUDA")
 
     # Build the model
-    log(log_fh, "Building model...")
+    log.debug("Building model...")
     if args.model == 'modular':
         model = ModularCNN(args)
-        log(log_fh, "\tBuilt modular CNN with %d modules" % (args.n_modules))
+        log.debug("\tBuilt modular CNN with %d modules" % (args.n_modules))
     elif args.model == 'mnist':
         model = MNISTCNN(args)
-        log(log_fh, "\tBuilt MNIST CNN")
+        log.debug("\tBuilt MNIST CNN")
     elif args.model == 'squeeze':
         model = SqueezeNet(num_classes=args.n_classes, use_cuda=args.cuda)
-        log(log_fh, "\tBuilt SqueezeNet")
+        log.debug("\tBuilt SqueezeNet")
     elif args.model == 'openface':
         model = OpenFaceClassifier(args)
-        log(log_fh, "\tBuilt OpenFaceClassifier")
+        log.debug("\tBuilt OpenFaceClassifier")
     elif args.model == 'resnet':
         model = ResNet(Bottleneck, [3, 8, 36, 3])
-        log(log_fh, "\tBuilt ResNet152")
+        log.debug("\tBuilt ResNet152")
     elif args.model == 'inception':
         model = Inception3(num_classes=args.n_classes)
-        log(log_fh, "\tBuilt Inception")
+        log.debug("\tBuilt Inception")
     elif args.model == 'densenet':
         model = DenseNet(num_init_features=96, growth_rate=48, block_config=(6, 12, 36, 24), **kwargs)
-        log(log_fh, "\tBuilt DenseNet161")
+        log.debug("\tBuilt DenseNet161")
     elif args.model == 'alexnet':
         model = AlexNet()
-        log(log_fh, "\tBuilt AlexNet")
+        log.debug("\tBuilt AlexNet")
     elif args.model == 'vgg':
         model = vgg19_bn(pretrained=True)
-        log(log_fh, "\tBuilt VGG19bn")
+        log.debug("\tBuilt VGG19bn")
+    elif args.model == 'ensemble':
+        # TODO make it an option to select which models to include in ensemble
+        resnet = resnet152(pretrained=True)
+        #densenet = densenet161(pretrained=True)
+        #alex = alexnet(pretrained=True)
+        #vgg = vgg19_bn(pretrained=True)
+        if args.cuda:
+            resnet = resnet.cuda()
+            #densenet = densenet.cuda()
+            #alex = alex.cuda()
+            #vgg = vgg.cuda()
+        models = [resnet]#, densenet, alex, vgg]
 
+        # build the generator
+        model = Ensemble(args, models, (mean, std))
+        log.debug(("\tBuilt ensemble with ResNet, Densenet, AlexNet, and VGG"))
     else:
         raise NotImplementedError
     if args.cuda:
         model.cuda()
-    model.eval() # this should be redundant now
-    log(log_fh, "Done!")
-
     # Optional load model
     if args.load_model_from:
         model.load_state_dict(torch.load(args.load_model_from))
-        log(log_fh, "Loaded weights from %s" % args.load_model_from)
+        log.debug("Loaded weights from %s" % args.load_model_from)
+    log.debug("Done!")
+
 
     # Train
     with h5py.File(args.data_path + 'val.hdf5', 'r') as fh:
         val_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
     if args.train:
-        log(log_fh, "Training...")
+        log.debug("Training...")
         with h5py.File(args.data_path + 'tr.hdf5', 'r') as fh:
             tr_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
         model.train_model(args, tr_data, val_data, log_fh)
-        log(log_fh, "Done!")
+        log.debug("Done!")
         del tr_data
+    model.eval()
     _, val_acc, val_top5 = model.evaluate(val_data)
-    log(log_fh, "\tBest top1 validation accuracy: %.2f \tBest top5 acc: %.2f"
+    log.debug("\tBest top1 validation accuracy: %.2f \tBest top5 acc: %.2f"
         % (val_acc, val_top5))
     del val_data
 
@@ -175,22 +197,22 @@ def main(arguments):
         assert args.im_file
 
         # Load images to obfuscate
-        log(log_fh, "Generating noise for images...")
+        log.debug("Generating noise for images...")
         with h5py.File(args.im_file, 'r') as fh:
             clean_ims = fh['ins'][:]
             te_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
-        log(log_fh, "\tLoaded %d images!" % clean_ims.shape[0])
+        log.debug("\tLoaded %d images!" % clean_ims.shape[0])
 
         # Choose a class to target
         if args.target == 'random':
             data = Dataset(clean_ims, 
                 np.random.randint(args.n_classes, size=te_data.n_ins), args.generator_batch_size, args)
-            log(log_fh, "\t\ttargeting random class")
+            log.debug("\t\ttargeting random class")
         elif args.target == 'least':
             preds = model.predict(te_data)
             targs = np.argmin(preds, axis=1)
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
-            log(log_fh, "\t\ttargeting least likely class")
+            log.debug("\t\ttargeting least likely class")
             target_s = 'least likely'
         elif args.target == 'next':
             preds = model.predict(te_data)
@@ -198,23 +220,26 @@ def main(arguments):
             one_hot[np.arange(te_data.n_ins), te_data.outs.numpy().astype(int)] = 1
             targs = np.argmax(preds * (1. - one_hot), axis=1)
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
-            log(log_fh, "\t\ttargeting next likely class")
+            log.debug("\t\ttargeting next likely class")
         elif args.target == 'none':
             data = Dataset(clean_ims, te_data.outs.numpy().copy(), args.generator_batch_size, args)
-            log(log_fh, "\t\ttargeting no class")
+            log.debug("\t\ttargeting no class")
         else:
             raise NotImplementedError
 
         # Create the noise generator
         if args.generator == 'random':
             generator = RandomNoiseGenerator(args)
-            log(log_fh, "\tBuilt random generator with eps %.3f" % args.eps)
+            log.debug("\tBuilt random generator with eps %.3f" % args.eps)
         elif args.generator == 'carlini_l2':
             generator = CarliniL2Generator(args, (mean, std))
-            log(log_fh, "\tBuilt C&W generator")
+            log.debug("\tBuilt C&W generator")
         elif args.generator == 'fgsm':
             generator = FGSMGenerator(args)
-            log(log_fh, "\tBuilt fgsm generator with eps %.3f" % args.eps)
+            log.debug("\tBuilt fgsm generator with eps %.3f" % args.eps)
+        elif args.generator == 'optimization':
+            generator = OptimizationGenerator(args)
+            log.debug("\tBuilt optimization generator")
         elif args.generator == 'ensemble':
             # build a shit ton of models
             old_model = model
@@ -231,35 +256,42 @@ def main(arguments):
 
             # build the generator
             generator = EnsembleGenerator(args, model, data, te_data.outs, log_fh, (mean, std))
-            log(log_fh, ("\tBuilt ensemble optimization generator with "
+            log.debug(("\tBuilt ensemble optimization generator with "
                             "ResNet, Densenet, AlexNet, and VGG"))
         else:
             raise NotImplementedError
 
+        if args.model == 'ensemble' and args.mwu_ensemble_weights:
+            model.weight_experts(generator, te_data, args.n_mwu_steps, 
+                                    args.mwu_penalty)
+
 
         # Generate the corrupt images
-        # NB: noise will be in the input space,
+        # NB: noise will be in the input (normalized) space,
         #     which is not necessarily a valid image
-        corrupt_ims = generator.generate(data, model, args, log_fh)
-        log(log_fh, "Done!")
+        corrupt_ims = generator.generate(data, model, args)
+        log.debug("Done!")
 
         if args.generator == 'ensemble':
             del model
             model = old_model
 
         # Compute the corruption rate
-        log(log_fh, "Computing corruption rate...")
+        log.debug("Computing corruption rate...")
         corrupt_data = Dataset(corrupt_ims, te_data.outs, args.generator_batch_size, args)
         target_data = Dataset(corrupt_ims, data.outs, args.generator_batch_size, args)
         _, clean_top1, clean_top5 = model.evaluate(te_data)
         _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
         _, target_top1, target_top5 = model.evaluate(target_data)
-        log(log_fh, "\tClean top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
+        log.debug("\tClean top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
                 (clean_top1, clean_top5))
-        log(log_fh, "\tCorrupt top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
+        log.debug("\t\ttrue test accuracies")
+        log.debug("\tCorrupt top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
                 (corrupt_top1, corrupt_top5))
-        log(log_fh, "\tTarget top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
+        log.debug("\t\ttest accuracy on corrupted images")
+        log.debug("\tTarget top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
                 (target_top1, target_top5))
+        log.debug("\t\taccuracy on getting target labels")
 
         # De-normalize to [0,1]^d
         if mean is not None:
@@ -291,7 +323,7 @@ def main(arguments):
                 fh['noise'] = noise
                 fh['ims'] = clean_ims
                 fh['noisy_ims'] = corrupt_ims
-            log(log_fh, "Saved image and noise data to %s" % args.out_file)
+            log.debug("Saved image and noise data to %s" % args.out_file)
 
         if args.out_path:
             clean_ims = (clean_ims * 255.).astype(np.uint8)
@@ -301,9 +333,9 @@ def main(arguments):
                 imsave("%s/%03d_clean.png" % (args.out_path, i), np.squeeze(clean))
                 imsave("%s/%03d_corrupt.png" % (args.out_path, i),
                     np.squeeze(corrupt))
-            log(log_fh, "Saved images to %s" % args.out_path)
+            log.debug("Saved images to %s" % args.out_path)
 
-    log_fh.close()
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

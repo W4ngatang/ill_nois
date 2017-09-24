@@ -2,13 +2,13 @@ import pdb
 import time
 import h5py
 import torch
+import logging as log
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.init as init
 import torch.nn.functional as F
 from torch.autograd import Variable
-from src.codebase.utils.utils import log
 from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
 from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau, LambdaLR
 
@@ -26,12 +26,16 @@ class Model(nn.Module):
 
 
     def forward(self):
+        '''
+        Should be overwritten by inheritors
+        '''
         raise NotImplementedError("Not a runnable class; inherit from this.")
 
 
     def train_model(self, args, tr_data, val_data, fh):
         '''
         Train the model according to the parameters specified in args.
+        NB: model is always converted to .eval() mode at the end of training.
         '''
 
         self.train()
@@ -39,15 +43,16 @@ class Model(nn.Module):
         # Optimizer
         lr = args.lr
         if args.optimizer == 'sgd':
-            optimizer = optim.SGD(self.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
-            log(fh, "\tOptimizing with SGD with learning rate %.3f" % lr)
+            optimizer = optim.SGD(self.parameters(), lr=lr, momentum=args.momentum, 
+                                    weight_decay=args.weight_decay)
+            log.debug("\tOptimizing with SGD with learning rate %.3f" % lr)
         elif args.optimizer == 'adam':
             optimizer = optim.Adam(self.parameters(), lr=lr)
-            log(fh, "\tOptimizing with adam with learning rate %.3f" % lr)
+            log.debug("\tOptimizing with adam with learning rate %.3f" % lr)
         elif args.optimizer == 'adagrad':
             optimizer = optim.Adagrad(self.parameters(), lr=lr,
-                    weight_decay=args.weight_decay)
-            log(fh, "\tOptimizing with adagrad with learning rate %.3f" % lr)
+                                        weight_decay=args.weight_decay)
+            log.debug("\tOptimizing with adagrad with learning rate %.3f" % lr)
         else:
             raise NotImplementedError
 
@@ -64,13 +69,14 @@ class Model(nn.Module):
         start_time = time.time()
         val_loss, val_acc, val_top5 = self.evaluate(val_data)
         best_loss, best_acc = val_loss, val_acc
-        log(fh, "\tInitial val loss: %.3f \tval acc: %.2f \tval top5: %.2f \t(%.3f s)" % (val_loss, val_acc, val_top5, time.time() - start_time))
+        log.debug("\tInitial val loss: %.3f \tval acc: %.2f \tval top5: %.2f \t(%.3f s)" % 
+                (val_loss, val_acc, val_top5, time.time() - start_time))
         if args.save_model_to:
             torch.save(self.state_dict(), args.save_model_to)
-            log(fh, "\t\tSaved model to %s" % args.save_model_to)
+            log.debug("\t\tSaved model to %s" % args.save_model_to)
 
         for epoch in xrange(args.n_epochs):
-            log(fh, "\tEpoch %d, \tlearning rate: %.3f" % (epoch+1, scheduler.get_lr()[0]))
+            log.debug("\tEpoch %d, \tlearning rate: %.3f" % (epoch+1, scheduler.get_lr()[0]))
             total_loss, total_correct = 0., 0.
             start_time = time.time()
             for batch_idx in xrange(tr_data.n_batches):
@@ -88,20 +94,21 @@ class Model(nn.Module):
                 optimizer.step()
 
             val_loss, val_acc, val_top5 = self.evaluate(val_data)
-            log(fh, "\t\tTraining loss: %.3f \ttop1 accuracy: %.2f"
+            log.debug("\t\tTraining loss: %.3f \ttop1 accuracy: %.2f"
                     % (total_loss / tr_data.n_batches,
                         100. * total_correct / tr_data.n_ins))
-            log(fh, "\t\tVal loss: %.3f \ttop1 accuracy: %.2f \ttop5: %.2f \t(%.3f s)" % (val_loss, val_acc, val_top5, time.time()-start_time))
+            log.debug("\t\tVal loss: %.3f \ttop1 accuracy: %.2f \ttop5: %.2f \t(%.3f s)" % 
+                    (val_loss, val_acc, val_top5, time.time()-start_time))
             if val_acc > best_acc:
                 if args.save_model_to:
                     torch.save(self.state_dict(), args.save_model_to)
-                    log(fh, "\t\tSaved model to %s" % args.save_model_to)
+                    log.debug("\t\tSaved model to %s" % args.save_model_to)
                 best_acc = val_acc
             scheduler.step(epoch)
 
         if args.save_model_to:
             self.load_state_dict(torch.load(args.save_model_to))
-        log(fh, "\tFinished training in %.3s s!" % (time.time()-start_time))
+        log.debug("\tFinished training in %.3s s!" % (time.time()-start_time))
 
         self.eval()
 
@@ -119,7 +126,8 @@ class Model(nn.Module):
                 ins, targs = ins.cuda(), targs.cuda()
             ins, targs = Variable(ins, volatile=True), Variable(targs)
             outs = self(ins)
-            total_loss += F.cross_entropy(outs, targs, size_average=False).data[0]
+            #total_loss += F.cross_entropy(outs, targs, size_average=False).data[0]
+            total_loss += F.nll_loss(outs, targs, size_average=False).data[0] # still deciding on output of forward()
             _, preds = outs.topk(5, 1, True, True)
             preds = preds.t()
             correct = preds.eq(targs.view(1, -1).expand_as(preds))
@@ -148,6 +156,7 @@ class Model(nn.Module):
             predictions.append(outs.data.max(1)[1].cpu().numpy())
         return np.vstack(predictions)
 
+
     def get_gradient(self, ins, targs):
         '''
         Return gradient of loss wrt ins
@@ -157,6 +166,7 @@ class Model(nn.Module):
             ins, targs = ins.cuda(), targs.cuda()
         ins, targs = Variable(ins, requires_grad=True), Variable(targs)
         outs = self(ins)
-        loss = F.cross_entropy(outs, targs)
+        #loss = F.cross_entropy(outs, targs)
+        loss = F.nll_loss(outs, targs)
         loss.backward(retain_variables=True)
         return ins.grad.data.cpu().numpy()

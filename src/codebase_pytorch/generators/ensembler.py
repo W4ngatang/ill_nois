@@ -231,7 +231,7 @@ class EnsembleGenerator(nn.Module):
             overall_best_ims = (overall_best_ims - self.mean) / self.std
         return overall_best_ims
 
-    def weight_experts(self, models, data, targs, args, fh):
+    def weight_experts(self, models, data, targs, args, fh, generator=None):
         '''
         Run multiplicative weight update algorithm to find 
         optimal weights for each expert.
@@ -253,7 +253,10 @@ class EnsembleGenerator(nn.Module):
             # generate noisy images against current ensemble
             # noisy images should be standardized
             # TODO make this faster; fewer generator steps
-            corrupt_ims = torch.FloatTensor(self.generate(data, models, args, fh))
+            if generator is None:
+                corrupt_ims = torch.FloatTensor(self.generate(data, models, args, fh))
+            else:
+                corrupt_ims = generator.generate(data, models, args, fh)
             if self.use_cuda:
                 corrupt_ims = corrupt_ims.cuda()
             corrupt_ims = Variable(corrupt_ims)
@@ -270,7 +273,5 @@ class EnsembleGenerator(nn.Module):
             self.weighting = Variable(w / w.sum())
         log(fh, "\tFinished weighting experts! Min weight: %07.3f Max weight: %07.3f" % 
                 (self.weighting.min().data[0], self.weighting.max().data[0]))
-
-        pdb.set_trace()
 
         return

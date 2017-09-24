@@ -126,10 +126,12 @@ class DenseNet(Model):
         drop_rate (float) - dropout rate after each dense layer
         num_classes (int) - number of classification classes
     """
-    def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16),
+    def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16), 
                  num_init_features=64, bn_size=4, drop_rate=0, num_classes=1000):
 
         super(DenseNet, self).__init__()
+
+        self.use_cuda = 1
 
         # First convolution
         self.features = nn.Sequential(OrderedDict([
