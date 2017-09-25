@@ -7,7 +7,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
-from src.codebase.utils.utils import log as log
 from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
 from src.codebase_pytorch.utils.dataset import Dataset
 from src.codebase_pytorch.utils.timer import Timer
@@ -18,16 +17,14 @@ class Ensemble(Model):
     Optimization-based generator using an ensemble of models
     '''
 
-    def __init__(self, args, models, n_classes, normalize=(None,None)):
+    def __init__(self, args, models):
         '''
 
         '''
         super(Ensemble, self).__init__()
-        self.use_cuda = args.cuda
+        self.use_cuda = args.use_cuda
         self.batch_size = batch_size = args.batch_size
         self.n_classes = n_classes = args.n_classes
-        self.mean = normalize[0]
-        self.std = normalize[1]
         for model in models:
             model.eval()
         self.models = models
@@ -36,6 +33,13 @@ class Ensemble(Model):
         if self.use_cuda:
             w = w.cuda()
         self.weights = Variable(w / w.sum())
+        '''
+        pred_dists = torch.zeros(n_models, batch_size, n_classes)
+        if self.use_cuda:
+            pred_dists = pred_dists.cuda()
+        self.pred_dists = Variable(pred_dists)
+        '''
+
 
     def forward(self, x):
         '''
@@ -45,8 +49,9 @@ class Ensemble(Model):
             This means you should not use the train_model method because it expects logits
         '''
         try:
-            pred_dists = Variable(torch.zeros( # probably faster to preallocate
-                            (self.n_models, x.size()[0], self.n_classes)))
+            #pred_dists = self.pred_dists
+            #pred_dists.data.zero_()
+            pred_dists = Variable(torch.zeros(self.n_models, x.size()[0], self.n_classes))
             if self.use_cuda:
                 pred_dists.data = pred_dists.data.cuda()
             for i, model in enumerate(self.models):
@@ -72,6 +77,7 @@ class Ensemble(Model):
         targs = data.outs
         n_ims = targs.size()[0]
 
+        log.debug("\tWeighting experts for %d steps" % n_steps)
         for t in xrange(n_steps):
             # generate noisy images against current ensemble
             # noisy images should be standardized
@@ -92,7 +98,6 @@ class Ensemble(Model):
                 w = w.cuda()
             self.weights = Variable(w / w.sum())
         self.w = w
-
         log.debug("\tFinished weighing experts! Min weight: %07.3f Max weight: %07.3f" % (self.weights.min().data[0], self.weights.max().data[0]))
 
         return
