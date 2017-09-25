@@ -210,16 +210,13 @@ def main(arguments):
             log.debug("\t\ttargeting random class")
         elif args.target == 'least':
             preds, dists = model.predict(te_data)
-            targs = np.argmin(dists, axis=1)
+            targs = dists.argsort(axis=1)[:,0]
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log.debug("\t\ttargeting least likely class")
             target_s = 'least likely'
         elif args.target == 'next':
             preds, dists = model.predict(te_data)
-            one_hot = np.zeros((te_data.n_ins, args.n_classes))
-            one_hot[np.arange(te_data.n_ins), 
-                        te_data.outs.numpy().astype(int)] = 1
-            targs = np.argmax(dists* (1. - one_hot), axis=1)
+            targs = dists.argsort(axis=1)[:,-2]
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log.debug("\t\ttargeting next likely class")
         elif args.target == 'least5':
