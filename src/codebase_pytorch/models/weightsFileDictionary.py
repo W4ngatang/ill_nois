@@ -9,6 +9,7 @@ juankyWeights = {
     'vgg11_bn': juankyFolder + 'vgg11_bn-6002323d.pth',
     'vgg13_bn': juankyFolder + 'vgg13_bn-abd245e5.pth',
     'vgg16_bn': juankyFolder + 'vgg16_bn-6c64b313.pth',
+    'vgg19_bn': juankyFolder + 'vgg19_bn-c79401a0.pth',
     'resnet18': juankyFolder + 'resnet18-5c106cde.pth',
     'resnet34': juankyFolder + 'resnet34-333f7ec4.pth',
     'resnet50': juankyFolder + 'resnet50-19c8e357.pth',

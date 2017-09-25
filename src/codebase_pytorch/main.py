@@ -7,6 +7,7 @@ import logging as log
 import argparse
 import numpy as np
 from scipy.misc import imsave
+import pickle
 
 # Helper stuff
 from src.codebase_pytorch.utils.dataset import Dataset
@@ -15,8 +16,7 @@ from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
 # Classifiers
 from src.codebase_pytorch.models.ModularCNN import ModularCNN
 from src.codebase_pytorch.models.mnistCNN import MNISTCNN
-from src.codebase_pytorch.models.squeezeNet import SqueezeNet
-from src.codebase_pytorch.models.openFace import openFaceClassifier
+from src.codebase_pytorch.models.squeezeNet import SqueezeNet, squeezenet1_0, squeezenet1_1
 from src.codebase_pytorch.models.resnet import ResNet, Bottleneck, resnet152
 from src.codebase_pytorch.models.inception import Inception3
 from src.codebase_pytorch.models.densenet import DenseNet, densenet161
@@ -41,7 +41,7 @@ def main(arguments):
             formatter_class=argparse.RawDescriptionHelpFormatter)
 
     # General options
-    parser.add_argument("--no_cuda", help="disables CUDA training", type=int, default=0)
+    parser.add_argument("--use_cuda", help="enables CUDA training", type=int, default=0)
     parser.add_argument("--log_file", help="Path to file to log progress", type=str)
     parser.add_argument("--data_path", help="Path to hdf5 files containing training data", type=str, default='')
     parser.add_argument("--im_file", help="Path to h5py? file containing images to obfuscate", type=str, default='')
@@ -72,6 +72,9 @@ def main(arguments):
 
     # ModularCNN options
     parser.add_argument("--n_modules", help="Number of convolutional modules to stack (shapes must match)", type=int, default=6)
+
+    # Ensemble options
+    parser.add_argument("--ensemble_holdout", help="Holdout model to not include in ensemble", type=str, default='squeezenet1_1')
 
     # Generator options
     parser.add_argument("--generate", help="1 if should build generator and obfuscate images", type=int, default=1)
@@ -118,12 +121,12 @@ def main(arguments):
             mean, std = None, None
     log.debug("Processing %d types of images of size %d and %d channels" % (args.n_classes, args.im_size, args.n_channels))
 
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-    if args.cuda:
+    args.use_cuda = args.use_cuda and torch.cuda.is_available()
+    if args.use_cuda:
         log.debug("Using CUDA")
 
-    if args.weight_dir:
-        weight_dir = pickle.load(open(args.weight_dir, "rb"))
+    if args.weights_dict:
+        weights_dict = pickle.load(open(args.weights_dict, "rb"))
 
     # Build the model
     log.debug("Building model...")
@@ -134,7 +137,7 @@ def main(arguments):
         model = MNISTCNN(args)
         log.debug("\tBuilt MNIST CNN")
     elif args.model == 'squeeze':
-        model = SqueezeNet(num_classes=args.n_classes, use_cuda=args.cuda)
+        model = SqueezeNet(num_classes=args.n_classes, use_cuda=args.use_cuda)
         log.debug("\tBuilt SqueezeNet")
     elif args.model == 'openface':
         model = OpenFaceClassifier(args)
@@ -152,27 +155,33 @@ def main(arguments):
         model = AlexNet()
         log.debug("\tBuilt AlexNet")
     elif args.model == 'vgg':
-        model = vgg19_bn(pretrained=weight_dir["vgg19_bn"])
+        model = vgg19_bn(pretrained=weights_dict["vgg19_bn"])
         log.debug("\tBuilt VGG19bn")
     elif args.model == 'ensemble':
-        # TODO make it an option to select which models to include in ensemble
-        resnet = resnet152(pretrained=weight_dir["resnet152"])
-        #densenet = densenet161(pretrained=True)
-        #alex = alexnet(pretrained=True)
-        #vgg = vgg19_bn(pretrained=True)
-        if args.cuda:
-            resnet = resnet.cuda()
-            #densenet = densenet.cuda()
-            #alex = alex.cuda()
-            #vgg = vgg.cuda()
-        models = [resnet]#, densenet, alex, vgg]
-
-        # build the generator
-        model = Ensemble(args, models, (mean, std))
-        log.debug(("\tBuilt ensemble with ResNet, Densenet, AlexNet, and VGG"))
+        holdout = args.ensemble_holdout
+        models, model_strings = [], []
+        if holdout != 'resnet152':
+            models.append(resnet152(pretrained=weights_dict["resnet152"]))
+            model_strings.append('resnet152')
+        if holdout != 'densenet161':
+            models.append(densenet161(pretrained=True))
+            model_strings.append('densenet161')
+        if holdout != 'alexnet':
+            models.append(alexnet(pretrained=True))
+            model_strings.append('alexnet')
+        if holdout != 'vgg19bn':
+            models.append(vgg19_bn(pretrained=weights_dict["vgg19_bn"]))
+            model_strings.append('vgg19bn')
+        if holdout != 'squeezenet1_1':
+            models.append(squeezenet1_1(pretrained=True))
+            model_strings.append('squeezenet1_1')
+        if args.use_cuda: 
+            models = [m.cuda() for m in models]
+        model = Ensemble(args, models)
+        log.debug("\tBuilt ensemble with %s" % ', '.join(model_strings))
     else:
         raise NotImplementedError
-    if args.cuda:
+    if args.use_cuda:
         model.cuda()
     # Optional load model
     if args.load_model_from:
@@ -204,7 +213,7 @@ def main(arguments):
         log.debug("Generating noise for images...")
         with h5py.File(args.im_file, 'r') as fh:
             clean_ims = fh['ins'][:]
-            te_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
+            te_data = Dataset(fh['ins'][:], fh['outs'][:], args.generator_batch_size, args)
         log.debug("\tLoaded %d images!" % clean_ims.shape[0])
 
         # Choose a class to target
@@ -214,16 +223,13 @@ def main(arguments):
             log.debug("\t\ttargeting random class")
         elif args.target == 'least':
             preds, dists = model.predict(te_data)
-            targs = np.argmin(dists, axis=1)
+            targs = dists.argsort(axis=1)[:,0]
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log.debug("\t\ttargeting least likely class")
             target_s = 'least likely'
         elif args.target == 'next':
             preds, dists = model.predict(te_data)
-            one_hot = np.zeros((te_data.n_ins, args.n_classes))
-            one_hot[np.arange(te_data.n_ins), 
-                        te_data.outs.numpy().astype(int)] = 1
-            targs = np.argmax(dists* (1. - one_hot), axis=1)
+            targs = dists.argsort(axis=1)[:,-2]
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log.debug("\t\ttargeting next likely class")
         elif args.target == 'least5':
@@ -256,24 +262,6 @@ def main(arguments):
         elif args.generator == 'optimization':
             generator = OptimizationGenerator(args)
             log.debug("\tBuilt optimization generator")
-        elif args.generator == 'ensemble':
-            # build a shit ton of models
-            old_model = model
-            resnet = resnet152(pretrained=True)
-            densenet = densenet161(pretrained=True)
-            alex = alexnet(pretrained=True)
-            vgg = vgg19_bn(pretrained=True)
-            if args.cuda:
-                resnet = resnet.cuda()
-                densenet = densenet.cuda()
-                alex = alex.cuda()
-                vgg = vgg.cuda()
-            model = [resnet, densenet, alex, vgg]
-
-            # build the generator
-            generator = EnsembleGenerator(args, model, data, te_data.outs, log_fh, (mean, std))
-            log.debug(("\tBuilt ensemble optimization generator with "
-                            "ResNet, Densenet, AlexNet, and VGG"))
         else:
             raise NotImplementedError
 
@@ -285,7 +273,7 @@ def main(arguments):
         # Generate the corrupt images
         # NB: noise will be in the input (normalized) space,
         #     which is not necessarily a valid image
-        corrupt_ims = generator.generate(data, model, args)
+        corrupt_ims = generator.generate(data, model)
         log.debug("Done!")
 
         if args.generator == 'ensemble':
@@ -302,6 +290,7 @@ def main(arguments):
         _, clean_top1, clean_top5 = model.evaluate(te_data)
         _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
         _, target_top1, target_top5 = model.evaluate(target_data)
+        log.debug("\tModel: %s" % args.model)
         log.debug("\tClean top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
                 (clean_top1, clean_top5))
         log.debug("\t\ttrue test accuracies")
@@ -311,6 +300,23 @@ def main(arguments):
         log.debug("\tTarget top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
                 (target_top1, target_top5))
         log.debug("\t\taccuracy on getting target labels")
+
+        if args.model == 'ensemble':
+            del model
+            for model_fn, model_name in \
+                [(resnet152, 'resnet152'), (alexnet, 'alex'), (vgg19_bn, 'vgg19bn'), (squeezenet1_1, 'squeeze1_1'), (densenet161, 'dense161')]:
+                model = model_fn(pretrained=True)
+                if args.use_cuda:
+                    model = model.cuda()
+                _, clean_top1, clean_top5 = model.evaluate(te_data)
+                _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
+                _, target_top1, target_top5 = model.evaluate(target_data)
+                log.debug("\tModel: %s" % model_name)
+                log.debug("\tClean top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" % (clean_top1, clean_top5))
+                log.debug("\tCorrupt top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" % (corrupt_top1, corrupt_top5))
+                log.debug("\tTarget top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" % (target_top1, target_top5))
+                del model
+
 
         # De-normalize to [0,1]^d
         if mean is not None:
@@ -322,6 +328,9 @@ def main(arguments):
                 corrupt_ims[i] = (corrupt_ims[i] * std) + mean
 
         # TODO handle out of range pixels?
+        clean_ims = np.clip(clean_ims, 0., 1.)
+        corrupt_ims = np.clip(clean_ims, 0., 1.)
+        '''
         for i in xrange(clean_ims.shape[0]):
             if clean_ims[i].min() < 0:
                 clean_ims[i] = clean_ims[i] - clean_ims[i].min()
@@ -331,6 +340,7 @@ def main(arguments):
                 corrupt_ims[i] = corrupt_ims[i] - corrupt_ims[i].min()
             if corrupt_ims[i].max() > 1:
                 corrupt_ims[i] = corrupt_ims[i] / corrupt_ims[i].max()
+        '''
 
         noise = corrupt_ims - clean_ims
 
@@ -352,7 +362,7 @@ def main(arguments):
                     np.squeeze(corrupt))
             log.debug("Saved images to %s" % args.out_path)
 
-
+        pdb.set_trace()
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

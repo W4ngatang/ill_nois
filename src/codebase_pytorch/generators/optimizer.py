@@ -23,13 +23,31 @@ class OptimizationGenerator(nn.Module):
 
         '''
         super(OptimizationGenerator, self).__init__()
-        self.use_cuda = args.cuda
+        self.use_cuda = args.use_cuda
         self.targeted = (args.target != 'none') and (args.target != 'top5')
+        self.n_classes = args.n_classes
         self.k = -1. * args.generator_confidence
         self.binary_search_steps = args.n_binary_search_steps
         self.init_const = args.generator_init_opt_const
         self.early_abort = args.early_abort
         self.batch_size = args.generator_batch_size
+        
+        # variable to optimize
+        w = torch.zeros((self.batch_size, args.n_channels, args.im_size, args.im_size))
+        if self.use_cuda:
+            w = w.cuda()
+        w = Variable(w, requires_grad=True)
+        if args.generator_optimizer == 'sgd':
+            optimizer = optim.SGD([w], lr=args.generator_lr, momentum=args.momentum)
+        elif args.generator_optimizer == 'adam':
+            optimizer = optim.Adam([w], lr=args.generator_lr)
+        elif args.generator_optimizer == 'adagrad':
+            optimizer = optim.Adagrad([w], lr=args.generator_lr)
+        else:
+            raise NotImplementedError
+        self.w = w
+        self.optimizer = optimizer
+        self.n_generator_steps = args.n_generator_steps
 
     def forward(self, x, w, c, labels, model):
         '''
@@ -52,7 +70,21 @@ class OptimizationGenerator(nn.Module):
         return torch.sum(dist_loss + c * class_loss), \
                 dist_loss, corrupt_im, log_prob_dist
 
-    def generate(self, data, model, args):
+    def generate(self, data, model):
+        '''
+        Generate 
+        '''
+
+        corrupt_ims = []
+
+        for batch_idx in xrange(data.n_batches):
+            ins, targs = data[batch_idx]
+            batch_corrupt_ims = self.generate_batch((ins, targs), model)
+            corrupt_ims.append(batch_corrupt_ims)
+
+        return np.vstack(corrupt_ims)
+
+    def generate_batch(self, data, model):
         '''
         Generate adversarial noise using fast gradient method.
 
@@ -75,8 +107,8 @@ class OptimizationGenerator(nn.Module):
             return x == y if self.targeted else x != y
 
         if isinstance(data, tuple):
-            ins = ins.numpy() if isinstance(data[0], torch.FloatTensor) else data[0]
-            outs = outs.numpy() if not isinstance(data[1], np.ndarray) else data[1]
+            ins = data[0].numpy() if isinstance(data[0], torch.FloatTensor) else data[0]
+            outs = data[1].numpy() if not isinstance(data[1], np.ndarray) else data[1]
         elif isinstance(data, Dataset):
             ins = data.ins.numpy()
             outs = data.outs.numpy()
@@ -96,7 +128,7 @@ class OptimizationGenerator(nn.Module):
         ins = torch.FloatTensor(ins)
 
         # make targs one-hot
-        one_hot_targs = np.zeros((outs.shape[0], args.n_classes))
+        one_hot_targs = np.zeros((outs.shape[0], self.n_classes))
         if len(outs.shape) > 1:
             for i in xrange(outs.shape[1]):
                 one_hot_targs[np.arange(outs.shape[0]), outs[:,i].astype(int)] = 1
@@ -115,16 +147,13 @@ class OptimizationGenerator(nn.Module):
         overall_best_dists = [1e10] * batch_size
         overall_best_classes = [-1] * batch_size
 
-        # variable to optimize
-        w = torch.zeros(ins.size())
+        w, optimizer = self.w, self.optimizer
 
         if self.use_cuda:
-            ins, one_hot_targs, w, opt_consts = \
-                ins.cuda(), one_hot_targs.cuda(), \
-                w.cuda(), opt_consts.cuda()
-        ins, one_hot_targs, w, opt_consts = \
-            Variable(ins), Variable(one_hot_targs), \
-            Variable(w, requires_grad=True), Variable(opt_consts)
+            ins, one_hot_targs, opt_consts = \
+                ins.cuda(), one_hot_targs.cuda(), opt_consts.cuda()
+        ins, one_hot_targs, opt_consts = \
+            Variable(ins), Variable(one_hot_targs), Variable(opt_consts)
 
         start_time = time.time()
         for b_step in xrange(self.binary_search_steps):
@@ -135,14 +164,6 @@ class OptimizationGenerator(nn.Module):
 
             w.data.zero_()
             # lazy way to reset optimizer parameters
-            if args.generator_optimizer == 'sgd':
-                optimizer = optim.SGD([w], lr=args.generator_lr, momentum=args.momentum)
-            elif args.generator_optimizer == 'adam':
-                optimizer = optim.Adam([w], lr=args.generator_lr)
-            elif args.generator_optimizer == 'adagrad':
-                optimizer = optim.Adagrad([w], lr=args.generator_lr)
-            else:
-                raise NotImplementedError
 
             best_dists = [1e10] * batch_size
             best_classes = [-1] * batch_size
@@ -150,7 +171,7 @@ class OptimizationGenerator(nn.Module):
             # repeat binary search one more time?
 
             prev_loss = 1e6
-            for step in xrange(args.n_generator_steps):
+            for step in xrange(self.n_generator_steps):
                 optimizer.zero_grad()
                 obj, dists, corrupt_ims, pred_dists = \
                     self(ins, w, opt_consts, one_hot_targs, model)
@@ -158,7 +179,7 @@ class OptimizationGenerator(nn.Module):
                 obj.backward()
                 optimizer.step()
 
-                if not (step % (args.n_generator_steps / 10.)) and step:
+                if not (step % (self.n_generator_steps / 10.)) and step:
                     # Logging every 1/10
                     _, preds = pred_dists.topk(1, 1, True, True)
                     n_correct = torch.sum(torch.eq(preds.data.cpu(), outs))
@@ -211,8 +232,4 @@ class OptimizationGenerator(nn.Module):
                     else:
                         opt_consts.data[e][0] *= 10
 
-        '''
-        if self.mean is not None:
-            overall_best_ims = (overall_best_ims - self.mean) / self.std
-        '''
         return overall_best_ims
