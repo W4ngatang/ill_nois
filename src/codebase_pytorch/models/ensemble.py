@@ -87,7 +87,7 @@ class Ensemble(Model):
                 n_correct = preds.eq(targs).sum()
 
                 # discount models that were wrong by penalty ^ (% wrong)
-                w[i] *= (penalty ** ((n_ims - float(n_correct))/ n_ims))
+                w[i] *= (penalty ** ((n_ims - float(n_correct)) / n_ims))
             if self.use_cuda:
                 w = w.cuda()
             self.weights = Variable(w / w.sum())

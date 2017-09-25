@@ -55,6 +55,7 @@ def main(arguments):
     parser.add_argument("--init_scale", help="Initialization scale (std around 0)", type=float, default=.1)
     parser.add_argument("--init_dist", help="Initialization distribution", type=str, default='normal')
     parser.add_argument("--load_model_from", help="Path to load model from. When loading a model, this argument must match the import model type.", type=str, default='')
+    parser.add_argument("--weights_dict", help="Path to (dictionary) pickle file containing the paths to weight files for every model")
     parser.add_argument("--save_model_to", help="Path to save model to", type=str, default='')
     parser.add_argument("--load_openface", help="Path to load pretrained openFace model from.", type=str, default='src/codebase_pytorch/models/openFace.ckpt')
 
@@ -121,6 +122,9 @@ def main(arguments):
     if args.cuda:
         log.debug("Using CUDA")
 
+    if args.weight_dir:
+        weight_dir = pickle.load(open(args.weight_dir, "rb"))
+
     # Build the model
     log.debug("Building model...")
     if args.model == 'modular':
@@ -148,11 +152,11 @@ def main(arguments):
         model = AlexNet()
         log.debug("\tBuilt AlexNet")
     elif args.model == 'vgg':
-        model = vgg19_bn(pretrained=True)
+        model = vgg19_bn(pretrained=weight_dir["vgg19_bn"])
         log.debug("\tBuilt VGG19bn")
     elif args.model == 'ensemble':
         # TODO make it an option to select which models to include in ensemble
-        resnet = resnet152(pretrained=True)
+        resnet = resnet152(pretrained=weight_dir["resnet152"])
         #densenet = densenet161(pretrained=True)
         #alex = alexnet(pretrained=True)
         #vgg = vgg19_bn(pretrained=True)
