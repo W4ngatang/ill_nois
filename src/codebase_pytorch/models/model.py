@@ -146,15 +146,16 @@ class Model(nn.Module):
         Get class predictions for data
         '''
         self.eval()
-        predictions = []
+        preds, dists = [], []
         for batch_idx in xrange(data.n_batches):
             ins, targs = data[batch_idx]
             if self.use_cuda:
                 ins, targs = ins.cuda(), targs.cuda()
             ins, targs = Variable(ins, volatile=True), Variable(targs)
             outs = self(ins)
-            predictions.append(outs.data.max(1)[1].cpu().numpy())
-        return np.vstack(predictions)
+            preds.append(outs.data.max(1)[1].cpu().numpy())
+            dists.append(outs.data.cpu().numpy())
+        return np.vstack(preds), np.vstack(dists)
 
 
     def get_gradient(self, ins, targs):

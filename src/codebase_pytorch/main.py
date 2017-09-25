@@ -209,18 +209,30 @@ def main(arguments):
                 np.random.randint(args.n_classes, size=te_data.n_ins), args.generator_batch_size, args)
             log.debug("\t\ttargeting random class")
         elif args.target == 'least':
-            preds = model.predict(te_data)
-            targs = np.argmin(preds, axis=1)
+            preds, dists = model.predict(te_data)
+            targs = np.argmin(dists, axis=1)
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log.debug("\t\ttargeting least likely class")
             target_s = 'least likely'
         elif args.target == 'next':
-            preds = model.predict(te_data)
+            preds, dists = model.predict(te_data)
             one_hot = np.zeros((te_data.n_ins, args.n_classes))
-            one_hot[np.arange(te_data.n_ins), te_data.outs.numpy().astype(int)] = 1
-            targs = np.argmax(preds * (1. - one_hot), axis=1)
+            one_hot[np.arange(te_data.n_ins), 
+                        te_data.outs.numpy().astype(int)] = 1
+            targs = np.argmax(dists* (1. - one_hot), axis=1)
             data = Dataset(clean_ims, targs, args.generator_batch_size, args)
             log.debug("\t\ttargeting next likely class")
+        elif args.target == 'least5':
+            preds, dists = model.predict(te_data)
+            targs = dists.argsort(axis=1)[:,:5]
+            data = Dataset(clean_ims, targs, args.generator_batch_size, args)
+            log.debug("\t\ttargeting least likely 5 classes")
+            target_s = 'least likely'
+        elif args.target == 'top5':
+            preds, dists = model.predict(te_data)
+            targs = dists.argsort(axis=1)[:,-5:]
+            data = Dataset(clean_ims, targs, args.generator_batch_size, args)
+            log.debug("\t\t(un)targeting most likely 5 classes")
         elif args.target == 'none':
             data = Dataset(clean_ims, te_data.outs.numpy().copy(), args.generator_batch_size, args)
             log.debug("\t\ttargeting no class")
@@ -279,7 +291,10 @@ def main(arguments):
         # Compute the corruption rate
         log.debug("Computing corruption rate...")
         corrupt_data = Dataset(corrupt_ims, te_data.outs, args.generator_batch_size, args)
-        target_data = Dataset(corrupt_ims, data.outs, args.generator_batch_size, args)
+        if len(data.outs.size()) > 1:
+            target_data = Dataset(corrupt_ims, data.outs[:,0], args.generator_batch_size, args)
+        else:
+            target_data = Dataset(corrupt_ims, data.outs, args.generator_batch_size, args)
         _, clean_top1, clean_top5 = model.evaluate(te_data)
         _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
         _, target_top1, target_top5 = model.evaluate(target_data)
@@ -303,7 +318,6 @@ def main(arguments):
                 corrupt_ims[i] = (corrupt_ims[i] * std) + mean
 
         # TODO handle out of range pixels?
-        '''
         for i in xrange(clean_ims.shape[0]):
             if clean_ims[i].min() < 0:
                 clean_ims[i] = clean_ims[i] - clean_ims[i].min()
@@ -313,7 +327,6 @@ def main(arguments):
                 corrupt_ims[i] = corrupt_ims[i] - corrupt_ims[i].min()
             if corrupt_ims[i].max() > 1:
                 corrupt_ims[i] = corrupt_ims[i] / corrupt_ims[i].max()
-        '''
 
         noise = corrupt_ims - clean_ims
 
