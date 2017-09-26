@@ -73,12 +73,15 @@ class Ensemble(Model):
         Outputs:
             - w: weight for each expert
         '''
-        w = self.w
+        old_w = self.w
         targs = data.outs
         n_ims = targs.size()[0]
+        batch_size = generator.batch_size
 
         log.debug("\tWeighting experts for %d steps" % n_steps)
         for t in xrange(n_steps):
+            new_w = torch.zeros(old_w.size())
+
             # generate noisy images against current ensemble
             # noisy images should be standardized
             corrupt_ims = torch.FloatTensor(generator.generate(data, self))
@@ -87,17 +90,23 @@ class Ensemble(Model):
             corrupt_ims = Variable(corrupt_ims)
 
             for i, model in enumerate(self.models):
-                # make predictions for each model
-                logits = model(corrupt_ims)
-                preds = logits.data.max(1)[1].cpu()
-                n_correct = preds.eq(targs).sum()
-
+                preds = torch.zeros(n_ims)
+                for batch_idx in range(0, n_ims, generator.batch_size):
+                    # make predictions for each model
+                    logits = model(corrupt_ims[batch_idx:batch_idx+batch_size])
+                    batch_preds = logits.data.max(1)[1].cpu()
+                    preds[batch_idx:batch_idx+batch_size] = batch_preds 
+                n_correct = preds.long().eq(targs).sum()
                 # discount models that were wrong by penalty ^ (% wrong)
-                w[i] *= (penalty ** ((n_ims - float(n_correct))/ n_ims))
+                new_w[i] = old_w[i] * (penalty ** ((n_ims - float(n_correct))/ n_ims))
+
+            del old_w, self.weights
             if self.use_cuda:
-                w = w.cuda()
-            self.weights = Variable(w / w.sum())
-        self.w = w
+                new_w = new_w.cuda()
+            self.weights = Variable(new_w / new_w.sum())
+            old_w = new_w
+        self.w = new_w
         log.debug("\tFinished weighing experts! Min weight: %07.3f Max weight: %07.3f" % (self.weights.min().data[0], self.weights.max().data[0]))
+        log.debug("\t\tweights: %s" % ", ".join([str(w) for w in self.weights.data]))
 
         return

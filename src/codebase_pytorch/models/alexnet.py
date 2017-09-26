@@ -43,6 +43,8 @@ class AlexNet(Model):
             nn.Linear(4096, num_classes),
         )
 
+        self.use_cuda = 1
+
     def forward(self, x):
         x = self.features(x)
         x = x.view(x.size(0), 256 * 6 * 6)

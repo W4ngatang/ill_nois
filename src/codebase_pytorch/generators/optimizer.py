@@ -185,8 +185,8 @@ class OptimizationGenerator(nn.Module):
                     n_correct = torch.sum(torch.eq(preds.data.cpu(), outs))
                     if not self.targeted:
                         n_correct = batch_size - n_correct
-                    log.debug(('\t\tStep %d \tobjective: %07.3f '
-                             '\tavg dist: %07.3f'
+                    log.debug(('\t\tStep %d \tobjective: %012.7f '
+                             '\tavg dist: %012.7f'
                              '\tn targeted class: %d'
                              '\t(%.3f s)') % (step, total_loss, 
                              torch.mean(dists.data), n_correct,

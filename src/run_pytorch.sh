@@ -9,8 +9,8 @@
 #SBATCH --mail-type=end
 #SBATCH --mail-user=alexwang@college.harvard.edu
 
-EXP_NAME="imagenet_mwu"
-EXP_DIR="/n/regal/rush_lab/awang/processed_data/song_small"
+EXP_NAME="song_untarg_vgg19bn"
+EXP_DIR="/n/regal/rush_lab/awang/processed_data/song"
 DATE="$(date +%m-%d)"
 LOG_PATH="src/logs/$DATE"
 OUT_PATH="src/outs/$DATE/${EXP_NAME}"
@@ -33,9 +33,9 @@ INIT_SCALE=.1
 ENSEMBLE_HOLDOUT=vgg19bn
 
 TRAIN=0
-OPTIMIZER=adagrad
+OPTIMIZER=adam
 N_EPOCHS=0
-LR=.1
+LR=8.
 MOMENTUM=.9
 WEIGHT_DECAY=.0002
 NESTEROV=true
@@ -43,20 +43,20 @@ BATCH_SIZE=100
 
 GENERATE=1
 GENERATOR=optimization
-N_GEN_STEPS=10
-TARGET=least
+N_GEN_STEPS=100
+TARGET=none
 
 GEN_EPS=.1
 GEN_ALPHA=0.0
 
-GEN_INIT_OPT_CONST=1000.
+GEN_INIT_OPT_CONST=0.
 GEN_OPTIMIZER=adam
 GEN_LR=.01
-GEN_BATCH_SIZE=5
+GEN_BATCH_SIZE=10
 N_BINARY_SEARCH_STEPS=1
 
 USE_MWU=0
-N_MWU_STEPS=5
+N_MWU_STEPS=25
 MWU_PENALTY=.1
 
 if [ ! -f "$MODEL_PATH" ] || [ $TRAIN_NEW -eq "1" ]; then

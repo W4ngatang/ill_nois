@@ -51,13 +51,13 @@ class Fire(nn.Module):
 
 class SqueezeNet(Model):
 
-    def __init__(self, version=1.0, num_classes=1000, use_cuda=0):
+    def __init__(self, version=1.0, num_classes=1000):
         super(SqueezeNet, self).__init__()
         if version not in [1.0, 1.1]:
             raise ValueError("Unsupported SqueezeNet version {version}:"
                              "1.0 or 1.1 expected".format(version=version))
         self.num_classes = num_classes
-        self.use_cuda = use_cuda
+        self.use_cuda = 1
 
         if version == 1.0:
             self.features = nn.Sequential(
@@ -113,128 +113,6 @@ class SqueezeNet(Model):
         x = self.features(x)
         x = self.classifier(x)
         return x.view(x.size(0), self.num_classes)
-
-    def train_model(self, args, tr_data, val_data, fh):
-        '''
-        Train the model according to the parameters specified in args.
-        '''
-        self.train()
-        lr = args.lr
-        if args.optimizer == 'sgd':
-            optimizer = optim.SGD(self.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
-            log(fh, "\tOptimizing with SGD with learning rate %.3f" % lr)
-        elif args.optimizer == 'adam':
-            optimizer = optim.Adam(self.parameters(), lr=lr)
-            log(fh, "\tOptimizing with adam with learning rate %.3f" % lr)
-        elif args.optimizer == 'adagrad':
-            optimizer = optim.Adagrad(self.parameters(), lr=lr,
-                    weight_decay=args.weight_decay)
-            log(fh, "\tOptimizing with adagrad with learning rate %.3f" % lr)
-        else:
-            raise NotImplementedError
-        scheduler = ReduceLROnPlateau(optimizer, 
-                'max', factor=.5, patience=3, threshold=1e-1)
-        #lr_lambda = lambda epoch: (1 - float(epoch) / args.n_epochs)
-        #scheduler = LambdaLR(optimizer, lr_lambda)
-
-        if args.load_model_from:
-            self.load_state_dict(torch.load(args.load_model_from))
-
-        start_time = time.time()
-        val_loss, val_acc = self.evaluate(val_data)
-        best_loss, best_acc = val_loss, val_acc
-        last_acc = val_acc
-        log(fh, "\tInitial val loss: %.3f, \tval acc: %.2f \t(%.3f s)" %
-                (val_loss, val_acc, time.time() - start_time))
-        if args.save_model_to:
-            torch.save(self.state_dict(), args.save_model_to)
-            log(fh, "\t\tSaved model to %s" % args.save_model_to)
-
-        for epoch in xrange(args.n_epochs):
-            log(fh, "\tEpoch %d, \tlearning rate: %.3f" % (epoch+1, scheduler.get_lr()[0]))
-            total_loss, total_correct = 0., 0.
-            start_time = time.time()
-            for batch_idx in xrange(tr_data.n_batches):
-                ins, targs = tr_data[batch_idx]
-                if self.use_cuda:
-                    ins, targs = ins.cuda(), targs.cuda()
-                ins, targs = Variable(ins), Variable(targs)
-                optimizer.zero_grad()
-                outs = self(ins)
-                loss = F.cross_entropy(outs, targs)
-                total_loss += loss.data[0]
-                preds = outs.data.max(1)[1]
-                total_correct += preds.eq(targs.data).cpu().sum()
-                loss.backward()
-                optimizer.step()
-
-            val_loss, val_acc = self.evaluate(val_data)
-            log(fh, "\t\tTraining loss: %.3f \taccuracy: %.2f"
-                    % (total_loss / tr_data.n_batches, 
-                        100. * total_correct / tr_data.n_ins))
-            log(fh, "\t\tVal loss: %.3f \taccuracy: %.2f \t(%.3f s)"
-                    % (val_loss, val_acc, time.time()-start_time))
-            if val_acc > best_acc:
-                if args.save_model_to:
-                    torch.save(self.state_dict(), args.save_model_to)
-                    log(fh, "\t\tSaved model to %s" % args.save_model_to)
-                best_acc = val_acc
-            if abs(last_acc - val_acc) < .01:
-                #pdb.set_trace()
-                #self.final_conv.register_forward_hook(print_outputs)
-                #self.final_conv.register_backward_hook(print_grads)
-                pass
-            last_acc = val_acc
-            scheduler.step(epoch)
-
-        if args.save_model_to:
-            self.load_state_dict(torch.load(args.save_model_to))
-        _, val_acc = self.evaluate(val_data)
-        log(fh, "\tFinished training in %.3f s, \tBest validation accuracy: %.2f" % 
-                (time.time() - start_time, val_acc))
-
-    def evaluate(self, data):
-        '''
-        Evaluate model on data, usually either validation or test
-        '''
-        self.eval()
-        total_loss, total_correct = 0., 0.
-        for batch_idx in xrange(data.n_batches):
-            ins, targs = data[batch_idx]
-            if self.use_cuda:
-                ins, targs = ins.cuda(), targs.cuda()
-            ins, targs = Variable(ins, volatile=True), Variable(targs)
-            outs = self(ins)
-            total_loss += F.cross_entropy(outs, targs, size_average=False).data[0]
-            preds = outs.data.max(1)[1]
-            total_correct += preds.eq(targs.data).cpu().sum()
-        return total_loss / data.n_ins, \
-                100. * total_correct / data.n_ins
-
-    def predict(self, data):
-        '''
-        Get predictions for data
-        '''
-        self.eval()
-        predictions = []
-        for batch_idx in xrange(data.n_batches):
-            ins, targs = data[batch_idx]
-            if self.use_cuda:
-                ins, targs = ins.cuda(), targs.cuda()
-            ins, targs = Variable(ins, volatile=True), Variable(targs)
-            outs = self(ins)
-            predictions.append(outs.data.max(1)[1].cpu().numpy())
-        return np.vstack(predictions)
-
-    def get_gradient(self, ins, targs):
-        self.eval()
-        if self.use_cuda:
-            ins, targs = ins.cuda(), targs.cuda()
-        ins, targs = Variable(ins, requires_grad=True), Variable(targs)
-        outs = self(ins)
-        loss = F.cross_entropy(outs, targs)
-        loss.backward(retain_variables=True)
-        return ins.grad.data.cpu().numpy()
 
 def squeezenet1_0(pretrained=False, **kwargs):
     r"""SqueezeNet model architecture from the `"SqueezeNet: AlexNet-level

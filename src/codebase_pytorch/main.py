@@ -40,7 +40,7 @@ def main(arguments):
             formatter_class=argparse.RawDescriptionHelpFormatter)
 
     # General options
-    parser.add_argument("--use_cuda", help="enables CUDA training", type=int, default=0)
+    parser.add_argument("--use_cuda", help="enables CUDA training", type=int, default=1)
     parser.add_argument("--log_file", help="Path to file to log progress", type=str)
     parser.add_argument("--data_path", help="Path to hdf5 files containing training data", type=str, default='')
     parser.add_argument("--im_file", help="Path to h5py? file containing images to obfuscate", type=str, default='')
@@ -117,7 +117,8 @@ def main(arguments):
             mean, std = fh['mean'][:], fh['std'][:]
         else:
             mean, std = None, None
-    log.debug("Processing %d types of images of size %d and %d channels" % (args.n_classes, args.im_size, args.n_channels))
+    log.debug("Processing %d types of images of size %d and %d channels" % 
+                (args.n_classes, args.im_size, args.n_channels))
 
     args.use_cuda = args.use_cuda and torch.cuda.is_available()
     if args.use_cuda:
@@ -132,7 +133,7 @@ def main(arguments):
         model = MNISTCNN(args)
         log.debug("\tBuilt MNIST CNN")
     elif args.model == 'squeeze':
-        model = SqueezeNet(num_classes=args.n_classes, use_cuda=args.use_cuda)
+        model = SqueezeNet(num_classes=args.n_classes)
         log.debug("\tBuilt SqueezeNet")
     elif args.model == 'openface':
         model = OpenFaceClassifier(args)
@@ -272,10 +273,6 @@ def main(arguments):
         corrupt_ims = generator.generate(data, model)
         log.debug("Done!")
 
-        if args.generator == 'ensemble':
-            del model
-            model = old_model
-
         # Compute the corruption rate
         log.debug("Computing corruption rate...")
         corrupt_data = Dataset(corrupt_ims, te_data.outs, args.generator_batch_size, args)
@@ -323,7 +320,7 @@ def main(arguments):
                 clean_ims[i] = (clean_ims[i] * std) + mean
                 corrupt_ims[i] = (corrupt_ims[i] * std) + mean
 
-        # TODO handle out of range pixels?
+        # handle out of range pixels
         clean_ims = np.clip(clean_ims, 0., 1.)
         corrupt_ims = np.clip(clean_ims, 0., 1.)
         '''
@@ -357,8 +354,6 @@ def main(arguments):
                 imsave("%s/%03d_corrupt.png" % (args.out_path, i),
                     np.squeeze(corrupt))
             log.debug("Saved images to %s" % args.out_path)
-
-        pdb.set_trace()
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
