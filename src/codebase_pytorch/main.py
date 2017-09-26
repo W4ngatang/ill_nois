@@ -133,56 +133,74 @@ def main(arguments):
     if args.model == 'modular':
         model = ModularCNN(args)
         log.debug("\tBuilt modular CNN with %d modules" % (args.n_modules))
+
     elif args.model == 'mnist':
         model = MNISTCNN(args)
         log.debug("\tBuilt MNIST CNN")
+
     elif args.model == 'squeeze':
         model = SqueezeNet(num_classes=args.n_classes, use_cuda=args.use_cuda)
         log.debug("\tBuilt SqueezeNet")
+
     elif args.model == 'openface':
         model = OpenFaceClassifier(args)
         log.debug("\tBuilt OpenFaceClassifier")
+
     elif args.model == 'resnet':
         model = ResNet(Bottleneck, [3, 8, 36, 3])
         log.debug("\tBuilt ResNet152")
+
     elif args.model == 'inception':
         model = Inception3(num_classes=args.n_classes)
         log.debug("\tBuilt Inception")
+
     elif args.model == 'densenet':
         model = DenseNet(num_init_features=96, growth_rate=48, block_config=(6, 12, 36, 24), **kwargs)
         log.debug("\tBuilt DenseNet161")
+
     elif args.model == 'alexnet':
         model = AlexNet()
         log.debug("\tBuilt AlexNet")
+
     elif args.model == 'vgg':
         model = vgg19_bn(pretrained=weights_dict["vgg19_bn"])
         log.debug("\tBuilt VGG19bn")
+
     elif args.model == 'ensemble':
         holdout = args.ensemble_holdout
         models, model_strings = [], []
+
         if holdout != 'resnet152':
             models.append(resnet152(pretrained=weights_dict["resnet152"]))
             model_strings.append('resnet152')
+
         if holdout != 'densenet161':
-            models.append(densenet161(pretrained=True))
+            models.append(densenet161(pretrained=weights_dict["densenet161"]))
             model_strings.append('densenet161')
+
         if holdout != 'alexnet':
-            models.append(alexnet(pretrained=True))
+            models.append(alexnet(pretrained=weights_dict["alexnet"]))
             model_strings.append('alexnet')
+
         if holdout != 'vgg19bn':
             models.append(vgg19_bn(pretrained=weights_dict["vgg19_bn"]))
             model_strings.append('vgg19bn')
+
         if holdout != 'squeezenet1_1':
-            models.append(squeezenet1_1(pretrained=True))
+            models.append(squeezenet1_1(pretrained=weights_dict["squeezenet1_1"]))
             model_strings.append('squeezenet1_1')
+
         if args.use_cuda: 
             models = [m.cuda() for m in models]
+
         model = Ensemble(args, models)
         log.debug("\tBuilt ensemble with %s" % ', '.join(model_strings))
     else:
         raise NotImplementedError
+
     if args.use_cuda:
         model.cuda()
+
     # Optional load model
     if args.load_model_from:
         model.load_state_dict(torch.load(args.load_model_from))
@@ -269,16 +287,11 @@ def main(arguments):
             model.weight_experts(generator, te_data, args.n_mwu_steps, 
                                     args.mwu_penalty)
 
-
         # Generate the corrupt images
         # NB: noise will be in the input (normalized) space,
         #     which is not necessarily a valid image
         corrupt_ims = generator.generate(data, model)
         log.debug("Done!")
-
-        if args.generator == 'ensemble':
-            del model
-            model = old_model
 
         # Compute the corruption rate
         log.debug("Computing corruption rate...")
@@ -305,7 +318,7 @@ def main(arguments):
             del model
             for model_fn, model_name in \
                 [(resnet152, 'resnet152'), (alexnet, 'alex'), (vgg19_bn, 'vgg19bn'), (squeezenet1_1, 'squeeze1_1'), (densenet161, 'dense161')]:
-                model = model_fn(pretrained=True)
+                model = model_fn(pretrained=weights_dict[model_name])
                 if args.use_cuda:
                     model = model.cuda()
                 _, clean_top1, clean_top5 = model.evaluate(te_data)

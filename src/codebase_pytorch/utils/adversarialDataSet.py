@@ -41,7 +41,11 @@ class AdversarialImageDataSet(Dataset):
         return self.imgInfo.iloc[index]
 
 if __name__ == "__main__":
-    import sys
+    import h5py
+
     dataset = AdversarialImageDataSet("/Users/juanperdomo/juanky/test_data/", "/Users/juanperdomo/juanky/image_label_target.csv")
-    print dataset[0][1:]
-    print float(sys.getsizeof(dataset)) # fairly small data set should be easy to deal with
+    # print dataset[:,1]
+    # with h5py.File("/Users/juanperdomo/juanky/song.hdf5", 'w') as f:
+    #     f['ins'] = ins
+    #     f['outs'] = outs
+    #     f['n_classes'] = np.array([args.n_classes])
