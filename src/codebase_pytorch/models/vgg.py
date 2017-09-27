@@ -1,9 +1,9 @@
+import math
+
 import torch
 import torch.nn as nn
-import torch.utils.model_zoo as model_zoo
-import math
-from src.codebase_pytorch.models.model import Model
 
+from src.codebase_pytorch.models.model import Model
 
 __all__ = [
     'VGG', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',

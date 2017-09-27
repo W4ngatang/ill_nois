@@ -1,7 +1,7 @@
 
 
 # juankyFolder = '/Users/juanperdomo/juanky/model_weights/'
-juankyFolder = "/n/regal/ysinger_group/model_weights/"
+juankyFolder = "/n/regal/ysinger_group/jcperdomo/model_weights/"
 
 juankyWeights = {
     'vgg11': juankyFolder + 'vgg11-bbd30ac9.pth',
@@ -23,7 +23,7 @@ juankyWeights = {
     'densenet161': juankyFolder + 'densenet161-8d451a50.pth',
     'squeezenet1_0': juankyFolder + 'squeezenet1_0-a815701f.pth',
     'squeezenet1_1': juankyFolder + 'squeezenet1_1-f364aa15.pth',
-    'alexnet': juankyFolder + 'alexnet-owt-4df8aa71.pth'
+    'alexnet': juankyFolder + 'alexnet-owt-4df8aa71.pth' # TODO FIX THIS SHIT
 }
 
 if __name__ == "__main__":

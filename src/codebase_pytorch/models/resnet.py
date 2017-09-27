@@ -1,22 +1,13 @@
-import pdb
-import time
 import math
 import torch
-import h5py
 import torch.nn as nn
-import torch.nn.init as init
-import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
-import torch.optim as optim
-from torch.autograd import Variable
-import numpy as np
-from src.codebase.utils.utils import log
-from src.codebase_pytorch.utils.dataset import Dataset
-from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
-from src.codebase_pytorch.utils.scheduler import LambdaLR
 from src.codebase_pytorch.models.model import Model
+import math
 
+import torch
+import torch.nn as nn
+
+from src.codebase_pytorch.models.model import Model
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']

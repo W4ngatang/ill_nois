@@ -1,16 +1,16 @@
-import pdb
 import time
-import h5py
-import torch
 import logging as log
+import time
+
 import numpy as np
+import torch
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.init as init
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.autograd import Variable
-from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
+
 from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau, LambdaLR
+
 
 class Model(nn.Module):
     '''

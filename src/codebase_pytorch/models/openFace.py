@@ -1,16 +1,17 @@
-import pdb
 import time
+from collections import OrderedDict
+
 import numpy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from collections import OrderedDict
+
 from src.codebase.utils.utils import log
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
-from src.codebase_pytorch.utils.scheduler import LambdaLR
 from src.codebase_pytorch.utils.SpatialCrossMapLRN_temp import SpatialCrossMapLRN_temp
+from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
+
 
 class LambdaBase(nn.Sequential):
     def __init__(self, fn, *args):

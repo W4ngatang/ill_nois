@@ -1,12 +1,12 @@
-import pdb
 import time
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 import torch.optim as optim
 from torch.autograd import Variable
-import numpy as np
+
 from src.codebase.utils.utils import log
 from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
 

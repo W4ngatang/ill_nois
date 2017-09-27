@@ -1,15 +1,14 @@
-import pdb
 import time
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-import numpy as np
+import torch.optim as optim
 from torch.autograd import Variable
+
 from src.codebase.utils.utils import log as log
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
 from src.codebase_pytorch.utils.dataset import Dataset
-from src.codebase_pytorch.utils.timer import Timer
+
 
 class CarliniL2Generator(nn.Module):
     '''
