@@ -94,6 +94,7 @@ class Model(nn.Module):
                 optimizer.step()
 
             val_loss, val_acc, val_top5 = self.evaluate(val_data)
+
             log.debug("\t\tTraining loss: %.3f \ttop1 accuracy: %.2f"
                     % (total_loss / tr_data.n_batches,
                         100. * total_correct / tr_data.n_ins))

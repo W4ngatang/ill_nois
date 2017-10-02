@@ -141,7 +141,7 @@ def main(arguments):
         log.debug("\tBuilt MNIST CNN")
 
     elif args.model == 'squeeze':
-        model = SqueezeNet(num_classes=args.n_classes, use_cuda=args.use_cuda)
+        model = squeezenet1_1(pretrained=weights_dict["squeezenet1_1"])
         log.debug("\tBuilt SqueezeNet")
 
     elif args.model == 'openface':
@@ -149,7 +149,7 @@ def main(arguments):
         log.debug("\tBuilt OpenFaceClassifier")
 
     elif args.model == 'resnet':
-        model = ResNet(Bottleneck, [3, 8, 36, 3])
+        model = resnet152(pretrained=weights_dict["resnet152"])
         log.debug("\tBuilt ResNet152")
 
     elif args.model == 'inception':
@@ -157,11 +157,11 @@ def main(arguments):
         log.debug("\tBuilt Inception")
 
     elif args.model == 'densenet':
-        model = DenseNet(num_init_features=96, growth_rate=48, block_config=(6, 12, 36, 24), **kwargs)
+        model = densenet161(pretrained=weights_dict["densenet161"])
         log.debug("\tBuilt DenseNet161")
 
     elif args.model == 'alexnet':
-        model = AlexNet()
+        model = alexnet(pretrained=weights_dict["alexnet"])
         log.debug("\tBuilt AlexNet")
 
     elif args.model == 'vgg':
@@ -291,8 +291,9 @@ def main(arguments):
             raise NotImplementedError
 
         if args.model == 'ensemble' and args.mwu_ensemble_weights:
-            model.weight_experts(generator, te_data, args.n_mwu_steps, 
-                                    args.mwu_penalty)
+            loss_history = model.weight_experts(generator, te_data, args.n_mwu_steps, args.mwu_penalty)
+            with open("{}/loss_history.pickle".format(args.out_path), 'wb') as handle:
+                pickle.dump(loss_history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         # Generate the corrupt images
         # NB: noise will be in the input (normalized) space,
@@ -359,7 +360,7 @@ def main(arguments):
 
         # TODO handle out of range pixels?
         clean_ims = np.clip(clean_ims, 0., 1.)
-        corrupt_ims = np.clip(clean_ims, 0., 1.)
+        corrupt_ims = np.clip(corrupt_ims, 0., 1.)
         '''
         for i in xrange(clean_ims.shape[0]):
             if clean_ims[i].min() < 0:

@@ -1,12 +1,11 @@
 import logging as log
 import pdb
-
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 from src.codebase_pytorch.models.model import Model
-
+from src.codebase_pytorch.utils.dataset import Dataset
 
 class Ensemble(Model):
     '''
@@ -25,6 +24,7 @@ class Ensemble(Model):
             model.eval()
         self.models = models
         self.n_models = n_models = len(models)
+        self.args = args
         self.w = w = torch.ones(n_models) / float(n_models)
         if self.use_cuda:
             w = w.cuda()
@@ -77,21 +77,26 @@ class Ensemble(Model):
         chunk_size = 10
 
         log.debug("\tWeighting experts for %d steps" % n_steps)
+        loss_history = list()
+
+
         for t in xrange(n_steps):
             
-            print t, w
+            log.debug("Iteration {}, Weights {}".format(t, list(w)))
             # generate noisy images against current ensemble
             # noisy images should be standardized
             #print "Weights, ", type(w.cpu().numpy()), w.cpu().numpy(), w.sum()
-            curr_expert = np.random.choice(self.n_models, 1, list(w.cpu().numpy()))[0]
+            # curr_expert = np.random.choice(self.n_models, 1, list(w.cpu().numpy()))[0]
             #print  "CURRENT EXP", curr_expert
-            curr_expert = self.models[curr_expert]
-            corrupt_ims = torch.FloatTensor(generator.generate(data, curr_expert))
+            # curr_expert = self.models[curr_expert]
             
+            
+            corrupt_ims_tensor = torch.FloatTensor(generator.generate(data, self))
+
             if self.use_cuda:
-                corrupt_ims = corrupt_ims.cuda()
+                corrupt_ims_tensor = corrupt_ims_tensor.cuda()
            
-            corrupt_ims = Variable(corrupt_ims)
+            corrupt_ims = Variable(corrupt_ims_tensor)
             
             for i, model in enumerate(self.models):
                 
@@ -120,11 +125,18 @@ class Ensemble(Model):
             w[-1] = 1 - w[:-1].sum()
 
             self.weights = Variable(w / w.sum())
-        
-        self.w = w
-        #print "END ", self.w
+
+            corrupt_dataset = Dataset(corrupt_ims_tensor.cpu(), targs, self.args.generator_batch_size, self.args)
+            _, clean_top1, _ = self.evaluate(corrupt_dataset)
+
+            loss_history.append((100 - clean_top1, w))
+
+
+        # pick the best history
+        print loss_history
+        self.w = min(loss_history, key = lambda x: x[0])[1]
         self.weights = Variable(self.w)
-        #print "END ", self.weights
+
         log.debug("\tFinished weighing experts! Min weight: %07.3f Max weight: %07.3f" % (self.weights.min().data[0], self.weights.max().data[0]))
 
-        return
+        return loss_history
