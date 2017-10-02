@@ -1,3 +1,4 @@
+from PIL import Image
 import os
 import pdb
 import sys
@@ -6,9 +7,7 @@ import torch
 import logging as log
 import argparse
 import numpy as np
-from scipy.misc import imsave
 import pickle
-
 # Helper stuff
 from src.codebase_pytorch.utils.dataset import Dataset
 from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
@@ -23,13 +22,14 @@ from src.codebase_pytorch.models.densenet import DenseNet, densenet161
 from src.codebase_pytorch.models.vgg import vgg19_bn
 from src.codebase_pytorch.models.alexnet import AlexNet, alexnet
 from src.codebase_pytorch.models.ensemble import Ensemble
-
+from src.codebase_pytorch.utils.helper import writeCSV
 # Generators
 from src.codebase_pytorch.generators.random import RandomNoiseGenerator
 from src.codebase_pytorch.generators.fgsm import FGSMGenerator
 from src.codebase_pytorch.generators.carlini_l2 import CarliniL2Generator
 from src.codebase_pytorch.generators.ensembler import EnsembleGenerator
 from src.codebase_pytorch.generators.optimizer import OptimizationGenerator
+from src.codebase_pytorch.generators.fgm import FGMGenerator
 
 def main(arguments):
     '''
@@ -47,6 +47,7 @@ def main(arguments):
     parser.add_argument("--im_file", help="Path to h5py? file containing images to obfuscate", type=str, default='')
     parser.add_argument("--out_file", help="Optional hdf5 filepath to write obfuscated images to", type=str)
     parser.add_argument("--out_path", help="Optional path to folder to save images to", type=str)
+    parser.add_argument("--experiment_name", help="experiment_name", type=str)
 
     # Model options
     parser.add_argument("--model", help="Model architecture to use", type=str, default='modular')
@@ -122,6 +123,7 @@ def main(arguments):
     log.debug("Processing %d types of images of size %d and %d channels" % (args.n_classes, args.im_size, args.n_channels))
 
     args.use_cuda = args.use_cuda and torch.cuda.is_available()
+    log.debug("IS CUDA AVAILABLE? - {}".format(torch.cuda.is_available()))
     if args.use_cuda:
         log.debug("Using CUDA")
 
@@ -200,6 +202,7 @@ def main(arguments):
 
     if args.use_cuda:
         model.cuda()
+        log.debug("\tUSING CUDA GPU!!!!")
 
     # Optional load model
     if args.load_model_from:
@@ -218,10 +221,11 @@ def main(arguments):
         model.train_model(args, tr_data, val_data, log_fh)
         log.debug("Done!")
         del tr_data
-    model.eval()
-    _, val_acc, val_top5 = model.evaluate(val_data)
-    log.debug("\tBest top1 validation accuracy: %.2f \tBest top5 acc: %.2f"
-        % (val_acc, val_top5))
+    log.debug("Starting to evaluate model on validation data set")
+    #model.eval()
+    #_, val_acc, val_top5 = model.evaluate(val_data)
+    #log.debug("\tBest top1 validation accuracy: %.2f \tBest top5 acc: %.2f"
+    #    % (val_acc, val_top5))
     del val_data
 
     if args.generate:
@@ -280,6 +284,9 @@ def main(arguments):
         elif args.generator == 'optimization':
             generator = OptimizationGenerator(args)
             log.debug("\tBuilt optimization generator")
+        elif args.generator == "fgm":
+            generator = FGMGenerator(args)
+            log.debug("\tBuilt fast gradient generator with eps %.3f" % args.eps)
         else:
             raise NotImplementedError
 
@@ -290,19 +297,23 @@ def main(arguments):
         # Generate the corrupt images
         # NB: noise will be in the input (normalized) space,
         #     which is not necessarily a valid image
+        log.debug("Starting to generate noise on data")
         corrupt_ims = generator.generate(data, model)
         log.debug("Done!")
 
         # Compute the corruption rate
         log.debug("Computing corruption rate...")
         corrupt_data = Dataset(corrupt_ims, te_data.outs, args.generator_batch_size, args)
+
         if len(data.outs.size()) > 1:
             target_data = Dataset(corrupt_ims, data.outs[:,0], args.generator_batch_size, args)
         else:
             target_data = Dataset(corrupt_ims, data.outs, args.generator_batch_size, args)
+
         _, clean_top1, clean_top5 = model.evaluate(te_data)
         _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
         _, target_top1, target_top5 = model.evaluate(target_data)
+
         log.debug("\tModel: %s" % args.model)
         log.debug("\tClean top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" %
                 (clean_top1, clean_top5))
@@ -314,10 +325,13 @@ def main(arguments):
                 (target_top1, target_top5))
         log.debug("\t\taccuracy on getting target labels")
 
+        csv_results = list()
+        csv_results.append([args.model, clean_top1, corrupt_top1, clean_top5, corrupt_top5])
+
         if args.model == 'ensemble':
             del model
             for model_fn, model_name in \
-                [(resnet152, 'resnet152'), (alexnet, 'alex'), (vgg19_bn, 'vgg19bn'), (squeezenet1_1, 'squeeze1_1'), (densenet161, 'dense161')]:
+                [(resnet152, 'resnet152'), (alexnet, 'alexnet'), (vgg19_bn, 'vgg19_bn'), (squeezenet1_1, 'squeezenet1_1'), (densenet161, 'densenet161')]:
                 model = model_fn(pretrained=weights_dict[model_name])
                 if args.use_cuda:
                     model = model.cuda()
@@ -330,6 +344,9 @@ def main(arguments):
                 log.debug("\tTarget top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" % (target_top1, target_top5))
                 del model
 
+                csv_results.append([model_name, clean_top1, corrupt_top1, clean_top5, corrupt_top5])
+
+        writeCSV(csv_results, "{}/results.csv".format(args.out_path), args)
 
         # De-normalize to [0,1]^d
         if mean is not None:
@@ -370,12 +387,11 @@ def main(arguments):
             corrupt_ims = (corrupt_ims * 255.).astype(np.uint8)
 
             for i, (clean, corrupt) in enumerate(zip(clean_ims, corrupt_ims)):
-                imsave("%s/%03d_clean.png" % (args.out_path, i), np.squeeze(clean))
-                imsave("%s/%03d_corrupt.png" % (args.out_path, i),
-                    np.squeeze(corrupt))
+                clean = clean.swapaxes(0,1).swapaxes(1,2)
+                corrupt = corrupt.swapaxes(0,1).swapaxes(1,2)
+                Image.fromarray(np.squeeze(clean), mode="RGB").save("%s/%03d_clean.jpeg" % (args.out_path, i))
+                Image.fromarray(np.squeeze(corrupt), mode="RGB").save("%s/%03d_corrupt.jpeg" % (args.out_path, i))
             log.debug("Saved images to %s" % args.out_path)
 
-        pdb.set_trace()
-
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+  sys.exit(main(sys.argv[1:]))

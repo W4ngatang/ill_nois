@@ -1,5 +1,17 @@
 
 
+def writeCSV(lst, filename, args):
+    csv_file = open(filename, "w+")
+    csv_file.write("Noise Target Type, {}\n".format(args.target))
+    csv_file.write("MWU Iterations, {}\n".format(args.n_mwu_steps))
+    csv_file.write("Epsilon, {}\n".format(args.eps))
+    csv_file.write("MWU Penalty, {}\n".format(args.mwu_penalty))
+    for line in lst:
+        str_line = ",".join([str(val) for val in line]) + "\n"
+        csv_file.write(str_line)
+    csv_file.close()
+
+
 
 class UnNormalize(object):
     """ Undo normalization of an tensor image with mean and standard deviation.

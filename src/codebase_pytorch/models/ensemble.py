@@ -4,7 +4,7 @@ import pdb
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
-
+import numpy as np
 from src.codebase_pytorch.models.model import Model
 
 
@@ -25,9 +25,11 @@ class Ensemble(Model):
             model.eval()
         self.models = models
         self.n_models = n_models = len(models)
-        self.w = w = torch.ones(n_models)
+        self.w = w = torch.ones(n_models) / float(n_models)
         if self.use_cuda:
             w = w.cuda()
+            for model in models:
+                model.cuda()
         self.weights = Variable(w / w.sum())
         '''
         pred_dists = torch.zeros(n_models, batch_size, n_classes)
@@ -72,28 +74,57 @@ class Ensemble(Model):
         w = self.w
         targs = data.outs
         n_ims = targs.size()[0]
+        chunk_size = 10
 
         log.debug("\tWeighting experts for %d steps" % n_steps)
         for t in xrange(n_steps):
+            
+            print t, w
             # generate noisy images against current ensemble
             # noisy images should be standardized
-            corrupt_ims = torch.FloatTensor(generator.generate(data, self))
+            #print "Weights, ", type(w.cpu().numpy()), w.cpu().numpy(), w.sum()
+            curr_expert = np.random.choice(self.n_models, 1, list(w.cpu().numpy()))[0]
+            #print  "CURRENT EXP", curr_expert
+            curr_expert = self.models[curr_expert]
+            corrupt_ims = torch.FloatTensor(generator.generate(data, curr_expert))
+            
             if self.use_cuda:
                 corrupt_ims = corrupt_ims.cuda()
+           
             corrupt_ims = Variable(corrupt_ims)
-
+            
             for i, model in enumerate(self.models):
-                # make predictions for each model
-                logits = model(corrupt_ims)
-                preds = logits.data.max(1)[1].cpu()
-                n_correct = preds.eq(targs).sum()
+                
+                n_correct = 0
+                
+                for pos in xrange(0, len(corrupt_ims), chunk_size):
+                    
+                    data_batch = corrupt_ims[pos: pos + chunk_size]
+                    labels_batch = targs[pos: pos + chunk_size]
+
+                    # make predictions for each model
+                    logits = model(data_batch)
+                    preds = logits.data.max(1)[1].cpu()
+                    n_correct += preds.eq(labels_batch).sum()
 
                 # discount models that were wrong by penalty ^ (% wrong)
-                w[i] *= (penalty ** ((n_ims - float(n_correct)) / n_ims))
+                w[i] *= (1 - penalty) ** ((n_ims - float(n_correct)) / n_ims)
+          
             if self.use_cuda:
                 w = w.cuda()
+          
+            # renormalize the weights of w
+            for j in xrange(len(w) - 1):
+                w[j] = w[j] / w.sum()
+            
+            w[-1] = 1 - w[:-1].sum()
+
             self.weights = Variable(w / w.sum())
+        
         self.w = w
+        #print "END ", self.w
+        self.weights = Variable(self.w)
+        #print "END ", self.weights
         log.debug("\tFinished weighing experts! Min weight: %07.3f Max weight: %07.3f" % (self.weights.min().data[0], self.weights.max().data[0]))
 
         return

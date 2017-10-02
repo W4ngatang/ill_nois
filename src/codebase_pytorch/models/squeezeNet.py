@@ -55,7 +55,7 @@ class SqueezeNet(Model):
             raise ValueError("Unsupported SqueezeNet version {version}:"
                              "1.0 or 1.1 expected".format(version=version))
         self.num_classes = num_classes
-        self.use_cuda = use_cuda
+        self.use_cuda = 1
 
         if version == 1.0:
             self.features = nn.Sequential(
@@ -190,24 +190,6 @@ class SqueezeNet(Model):
         _, val_acc = self.evaluate(val_data)
         log(fh, "\tFinished training in %.3f s, \tBest validation accuracy: %.2f" % 
                 (time.time() - start_time, val_acc))
-
-    def evaluate(self, data):
-        '''
-        Evaluate model on data, usually either validation or test
-        '''
-        self.eval()
-        total_loss, total_correct = 0., 0.
-        for batch_idx in xrange(data.n_batches):
-            ins, targs = data[batch_idx]
-            if self.use_cuda:
-                ins, targs = ins.cuda(), targs.cuda()
-            ins, targs = Variable(ins, volatile=True), Variable(targs)
-            outs = self(ins)
-            total_loss += F.cross_entropy(outs, targs, size_average=False).data[0]
-            preds = outs.data.max(1)[1]
-            total_correct += preds.eq(targs.data).cpu().sum()
-        return total_loss / data.n_ins, \
-                100. * total_correct / data.n_ins
 
     def predict(self, data):
         '''

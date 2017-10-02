@@ -18,6 +18,7 @@ class AlexNet(Model):
 
     def __init__(self, num_classes=1000):
         super(AlexNet, self).__init__()
+        self.use_cuda = 1
         self.features = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
             nn.ReLU(inplace=True),
