@@ -92,8 +92,7 @@ class CarliniL2Generator(nn.Module):
         # convert inputs to arctanh space
         if self.mean is not None:
             ins = (ins * self.std) + self.mean
-        ins = ins - ins.min()
-        ins = ins / ins.max()
+        ins = np.clip(ins, 0., 1.)
         assert ins.max() <= 1.0 and ins.min() >= 0.0 # in [0, 1]
         tanh_ins = 1.999999 * (ins - .5) # in (-1, 1)
         tanh_ins = torch.FloatTensor(np.arctanh(tanh_ins)) # in tanh space

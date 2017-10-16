@@ -29,6 +29,7 @@ from src.codebase_pytorch.generators.fgsm import FGSMGenerator
 from src.codebase_pytorch.generators.carlini_l2 import CarliniL2Generator
 from src.codebase_pytorch.generators.ensembler import EnsembleGenerator
 from src.codebase_pytorch.generators.optimizer import OptimizationGenerator
+from src.codebase_pytorch.generators.ensembler import EnsembleGenerator
 
 def main(arguments):
     '''
@@ -62,7 +63,7 @@ def main(arguments):
     parser.add_argument("--n_epochs", help="Number of epochs to train for", type=int, default=5)
     parser.add_argument("--optimizer", help="Optimization algorithm to use", type=str, default='adam')
     parser.add_argument("--lr_scheduler", help="Type of learning rate scheduler to use", type=str, default='plateau')
-    parser.add_argument("--batch_size", help="Batch size", type=int, default=200)
+    parser.add_argument("--batch_size", help="Batch size", type=int, default=10)
     parser.add_argument("--lr", help="Learning rate", type=float, default=.1)
     parser.add_argument("--momentum", help="Momentum", type=float, default=.5)
     parser.add_argument("--weight_decay", help="Weight decay", type=float, default=0.0)
@@ -78,10 +79,12 @@ def main(arguments):
     parser.add_argument("--generate", help="1 if should build generator and obfuscate images", type=int, default=1)
     parser.add_argument("--generator", help="Type of noise generator to use", type=str, default='fast_gradient')
     parser.add_argument("--target", help="Method for selecting class generator should 'push' image towards.", type=str, default='none')
+    parser.add_argument("--target_file", help="File containing labels as targets, one per line", type=str, default='')
+    parser.add_argument("--stochastic_generate", help="1 if leave models on train mode when generating", type=int, default=0)
 
     # Generator training options
     parser.add_argument("--generator_optimizer", help="Optimizer to use for Carlini generator", type=str, default='adam')
-    parser.add_argument("--generator_batch_size", help="Batch size for generator", type=int, default=50)
+    parser.add_argument("--generator_batch_size", help="Batch size for generator", type=int, default=10)
     parser.add_argument("--generator_lr", help="Learning rate for generator optimization when necessary", type=float, default=.1)
     parser.add_argument("--n_generator_steps", help="Number of iterations to run generator for", type=int, default=1)
 
@@ -100,12 +103,26 @@ def main(arguments):
     parser.add_argument("--n_mwu_steps", help="Number of steps for multiplicative weight update", type=int, default=5)
     parser.add_argument("--mwu_penalty", help="Penalization constant for MWU", type=float, default=.1)
 
+    parser.add_argument("--debug", help="1 if hit debug points", type=int, default=0)
+
     args = parser.parse_args(arguments)
 
-    log.basicConfig(format='%(asctime)s: \t%(message)s', level=log.DEBUG, 
+    #####
+    # Logging
+    #####
+
+    log.basicConfig(format='%(asctime)s: %(message)s', level=log.DEBUG, 
             datefmt='%m/%d/%Y %I:%M:%S %p')
     file_handler = log.FileHandler(args.log_file)
     log.getLogger().addHandler(file_handler)
+    log.debug(args)
+
+    #####
+    # Loading parameters
+    #####
+
+    batch_size = args.batch_size
+    gen_batch_size = args.generator_batch_size
 
     if args.data_path[-1] != '/':
         args.data_path += '/'
@@ -189,11 +206,11 @@ def main(arguments):
 
     # Train
     with h5py.File(args.data_path + 'val.hdf5', 'r') as fh:
-        val_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
+        val_data = Dataset(fh['ins'][:], fh['outs'][:], batch_size, args)
     if args.train:
         log.debug("Training...")
         with h5py.File(args.data_path + 'tr.hdf5', 'r') as fh:
-            tr_data = Dataset(fh['ins'][:], fh['outs'][:], args.batch_size, args)
+            tr_data = Dataset(fh['ins'][:], fh['outs'][:], batch_size, args)
         model.train_model(args, tr_data, val_data, log_fh)
         log.debug("Done!")
         del tr_data
@@ -210,38 +227,47 @@ def main(arguments):
         log.debug("Generating noise for images...")
         with h5py.File(args.im_file, 'r') as fh:
             clean_ims = fh['ins'][:]
-            te_data = Dataset(fh['ins'][:], fh['outs'][:], args.generator_batch_size, args)
+            te_data = Dataset(clean_ims, fh['outs'][:], gen_batch_size, args)
         log.debug("\tLoaded %d images!" % clean_ims.shape[0])
 
         # Choose a class to target
-        if args.target == 'random':
-            data = Dataset(clean_ims, 
-                np.random.randint(args.n_classes, size=te_data.n_ins), args.generator_batch_size, args)
+        if args.target == 'file':
+            assert args.target_file is not ''
+            log.debug("\t\ttargeting classes in %s" % args.target_file)
+            with open(args.target_file) as fh:
+                targs = np.array([int(i) for i in fh.readlines()])
+            assert targs.size == te_data.n_ins
+            assert targs.max() < args.n_classes and targs.min() >= 0
+            data = Dataset(clean_ims, targs, gen_batch_size, args)
+        elif args.target == 'random':
+            targs = np.random.randint(args.n_classes, size=te_data.n_ins)
+            data = Dataset(clean_ims, targs, gen_batch_size, args)
             log.debug("\t\ttargeting random class")
         elif args.target == 'least':
             preds, dists = model.predict(te_data)
             targs = dists.argsort(axis=1)[:,0]
-            data = Dataset(clean_ims, targs, args.generator_batch_size, args)
+            data = Dataset(clean_ims, targs, gen_batch_size, args)
             log.debug("\t\ttargeting least likely class")
             target_s = 'least likely'
         elif args.target == 'next':
             preds, dists = model.predict(te_data)
             targs = dists.argsort(axis=1)[:,-2]
-            data = Dataset(clean_ims, targs, args.generator_batch_size, args)
+            data = Dataset(clean_ims, targs, gen_batch_size, args)
             log.debug("\t\ttargeting next likely class")
         elif args.target == 'least5':
             preds, dists = model.predict(te_data)
             targs = dists.argsort(axis=1)[:,:5]
-            data = Dataset(clean_ims, targs, args.generator_batch_size, args)
+            data = Dataset(clean_ims, targs, gen_batch_size, args)
             log.debug("\t\ttargeting least likely 5 classes")
             target_s = 'least likely'
         elif args.target == 'top5':
             preds, dists = model.predict(te_data)
             targs = dists.argsort(axis=1)[:,-5:]
-            data = Dataset(clean_ims, targs, args.generator_batch_size, args)
+            data = Dataset(clean_ims, targs, gen_batch_size, args)
             log.debug("\t\t(un)targeting most likely 5 classes")
         elif args.target == 'none':
-            data = Dataset(clean_ims, te_data.outs.numpy().copy(), args.generator_batch_size, args)
+            data = Dataset(clean_ims, te_data.outs.numpy(), 
+                    gen_batch_size, args)
             log.debug("\t\ttargeting no class")
         else:
             raise NotImplementedError
@@ -257,8 +283,14 @@ def main(arguments):
             generator = FGSMGenerator(args)
             log.debug("\tBuilt fgsm generator with eps %.3f" % args.eps)
         elif args.generator == 'optimization':
-            generator = OptimizationGenerator(args)
+            generator = OptimizationGenerator(args, (mean, std))
             log.debug("\tBuilt optimization generator")
+        elif args.generator == 'ensemble':
+            assert args.model == 'ensemble'
+            del model
+            model = Ensemble(args, models, aggregate=0)
+            generator = EnsembleGenerator(args, (mean, std))
+            log.debug("\tBuilt ensemble generator")
         else:
             raise NotImplementedError
 
@@ -268,18 +300,35 @@ def main(arguments):
 
 
         # Generate the corrupt images
-        # NB: noise will be in the input (normalized) space,
+        # NB: noise will be in the normalized space,
         #     which is not necessarily a valid image
+        if args.stochastic_generate:
+            log.debug("\tTurning on training mode")
+            model.train() # may not work with batch norm...
+            if args.model == 'ensemble':
+                for m in model.models:
+                    m.train()
         corrupt_ims = generator.generate(data, model)
+        if args.stochastic_generate:
+            log.debug("\tTurning on eval mode")
+            model.eval()
+            if args.model == 'ensemble':
+                for m in model.models:
+                    m.eval()
         log.debug("Done!")
+
+        if args.generator == 'ensemble':
+            del model
+            model = Ensemble(args, models)
 
         # Compute the corruption rate
         log.debug("Computing corruption rate...")
-        corrupt_data = Dataset(corrupt_ims, te_data.outs, args.generator_batch_size, args)
+        corrupt_data = Dataset(corrupt_ims, te_data.outs, gen_batch_size, args)
         if len(data.outs.size()) > 1:
-            target_data = Dataset(corrupt_ims, data.outs[:,0], args.generator_batch_size, args)
+            target_data = Dataset(corrupt_ims, data.outs[:,0], 
+                                  gen_batch_size, args)
         else:
-            target_data = Dataset(corrupt_ims, data.outs, args.generator_batch_size, args)
+            target_data = Dataset(corrupt_ims, data.outs, gen_batch_size, args)
         _, clean_top1, clean_top5 = model.evaluate(te_data)
         _, corrupt_top1, corrupt_top5 = model.evaluate(corrupt_data)
         _, target_top1, target_top5 = model.evaluate(target_data)
@@ -297,7 +346,9 @@ def main(arguments):
         if args.model == 'ensemble':
             del model
             for model_fn, model_name in \
-                [(resnet152, 'resnet152'), (alexnet, 'alex'), (vgg19_bn, 'vgg19bn'), (squeezenet1_1, 'squeeze1_1'), (densenet161, 'dense161')]:
+                [(resnet152, 'resnet152'), (alexnet, 'alex'), 
+                 (vgg19_bn, 'vgg19bn'), (squeezenet1_1, 'squeeze1_1'), 
+                 (densenet161, 'dense161')]:
                 model = model_fn(pretrained=True)
                 if args.use_cuda:
                     model = model.cuda()
@@ -310,7 +361,6 @@ def main(arguments):
                 log.debug("\tTarget top 1 accuracy: %.3f \ttop 5 accuracy: %.3f" % (target_top1, target_top5))
                 del model
 
-
         # De-normalize to [0,1]^d
         if mean is not None:
             # dumb imagenet stuff
@@ -320,21 +370,9 @@ def main(arguments):
                 clean_ims[i] = (clean_ims[i] * std) + mean
                 corrupt_ims[i] = (corrupt_ims[i] * std) + mean
 
-        # handle out of range pixels
+        # handle out of range pixels, shouldn't happen w/ tanh
         clean_ims = np.clip(clean_ims, 0., 1.)
-        corrupt_ims = np.clip(clean_ims, 0., 1.)
-        '''
-        for i in xrange(clean_ims.shape[0]):
-            if clean_ims[i].min() < 0:
-                clean_ims[i] = clean_ims[i] - clean_ims[i].min()
-            if clean_ims[i].max() > 1:
-                clean_ims[i] = clean_ims[i] / clean_ims[i].max()
-            if corrupt_ims[i].min() < 0:
-                corrupt_ims[i] = corrupt_ims[i] - corrupt_ims[i].min()
-            if corrupt_ims[i].max() > 1:
-                corrupt_ims[i] = corrupt_ims[i] / corrupt_ims[i].max()
-        '''
-
+        corrupt_ims = np.clip(corrupt_ims, 0., 1.)
         noise = corrupt_ims - clean_ims
 
         # Save noise and images in ~[0,1] scale
@@ -347,12 +385,13 @@ def main(arguments):
 
         if args.out_path:
             clean_ims = (clean_ims * 255.).astype(np.uint8)
-            corrupt_ims = (corrupt_ims * 255.).astype(np.uint8)
+            corrupt_ims = (corrupt_ims * 256.).astype(np.uint8)
 
             for i, (clean, corrupt) in enumerate(zip(clean_ims, corrupt_ims)):
-                imsave("%s/%03d_clean.png" % (args.out_path, i), np.squeeze(clean))
+                imsave("%s/%03d_clean.png" % (args.out_path, i), 
+                                              np.squeeze(clean))
                 imsave("%s/%03d_corrupt.png" % (args.out_path, i),
-                    np.squeeze(corrupt))
+                                                np.squeeze(corrupt))
             log.debug("Saved images to %s" % args.out_path)
 
 if __name__ == '__main__':
