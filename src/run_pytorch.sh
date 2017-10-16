@@ -20,7 +20,6 @@ mkdir -p $OUT_PATH
 mkdir -p $CKPT_PATH
 #TRAIN_NEW=${1:-"0"}
 
-
 if [ ! -f "$MODEL_PATH" ] || [ $TRAIN_NEW -eq "1" ]; then
     MODEL_ACTION="save_model_to"
     MODEL_PATH="$CKPT_PATH/$EXP_NAME.ckpt"

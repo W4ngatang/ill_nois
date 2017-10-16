@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
-from src.codebase_pytorch.models.model import Model
 
+from src.codebase_pytorch.models.model import Model
 
 __all__ = ['Inception3', 'inception_v3']
 

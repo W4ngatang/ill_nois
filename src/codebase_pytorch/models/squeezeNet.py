@@ -1,18 +1,16 @@
-import pdb
 import time
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.init as init
 import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
+import torch.nn.init as init
 import torch.optim as optim
 from torch.autograd import Variable
-import numpy as np
+
 from src.codebase.utils.utils import log
-from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
-from src.codebase_pytorch.utils.scheduler import LambdaLR
 from src.codebase_pytorch.models.model import Model
+from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
 
 __all__ = ['SqueezeNet', 'squeezenet1_0', 'squeezenet1_1']
 
@@ -124,7 +122,7 @@ def squeezenet1_0(pretrained=False, **kwargs):
     model = SqueezeNet(version=1.0, **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['squeezenet1_0']))
-        model.load_state_dict(torch.load(model_paths['squeezenet1_0']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -139,5 +137,5 @@ def squeezenet1_1(pretrained=False, **kwargs):
     model = SqueezeNet(version=1.1, **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['squeezenet1_1']))
-        model.load_state_dict(torch.load(model_paths['squeezenet1_1']))
+        model.load_state_dict(torch.load(pretrained))
     return model

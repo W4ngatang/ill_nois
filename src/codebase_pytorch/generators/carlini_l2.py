@@ -1,15 +1,14 @@
-import pdb
 import time
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-import numpy as np
+import torch.optim as optim
 from torch.autograd import Variable
+
 from src.codebase.utils.utils import log as log
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
 from src.codebase_pytorch.utils.dataset import Dataset
-from src.codebase_pytorch.utils.timer import Timer
+
 
 class CarliniL2Generator(nn.Module):
     '''
@@ -53,7 +52,7 @@ class CarliniL2Generator(nn.Module):
             class_loss = torch.clamp(second_logit - target_logit, min=self.k)
         else:
             class_loss = torch.clamp(target_logit - second_logit, min=self.k)
-        dist_loss = torch.sum(torch.pow(corrupt_im - x, 2).view(self.batch_size, -1), dim=1) # dist we care about is between unnormalized (in [0,1]^d) images
+        dist_loss = torch.sum(torch.pow(corrupt_im - x, 2).view(self.batch_size, -1), dim=1)  # dist we care about is between unnormalized (in [0,1]^d) images
         return torch.sum(dist_loss + c * class_loss), dist_loss, corrupt_im, logits
 
     def generate(self, data, model, args, fh):

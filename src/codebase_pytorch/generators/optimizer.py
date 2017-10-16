@@ -1,17 +1,15 @@
-import pdb
 import time
-import numpy as np
 import logging as log
+import time
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from torch.autograd import Variable
 
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
 from src.codebase_pytorch.utils.dataset import Dataset
-from src.codebase_pytorch.utils.timer import Timer
+
 
 class OptimizationGenerator(nn.Module):
     '''

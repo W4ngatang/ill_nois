@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.utils.model_zoo as model_zoo
+
 from src.codebase_pytorch.models.model import Model
 
 __all__ = ['AlexNet', 'alexnet']
@@ -61,5 +61,5 @@ def alexnet(pretrained=False, **kwargs):
     model = AlexNet(**kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['alexnet']))
-        model.load_state_dict(torch.load(model_paths['alexnet']))
+        model.load_state_dict(torch.load(pretrained))
     return model

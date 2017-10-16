@@ -1,8 +1,9 @@
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
-from collections import OrderedDict
+
 from src.codebase_pytorch.models.model import Model
 
 __all__ = ['DenseNet', 'densenet121', 'densenet169', 'densenet201', 'densenet161']
@@ -30,7 +31,7 @@ def densenet121(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet121']))
-        model.load_state_dict(torch.load(model_paths['densenet121']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -44,7 +45,7 @@ def densenet169(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet169']))
-        model.load_state_dict(torch.load(model_paths['densenet169']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -58,7 +59,7 @@ def densenet201(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet201']))
-        model.load_state_dict(torch.load(model_paths['densenet201']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -72,7 +73,7 @@ def densenet161(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet161']))
-        model.load_state_dict(torch.load(model_paths['densenet161']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 

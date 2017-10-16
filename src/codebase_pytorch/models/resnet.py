@@ -1,22 +1,13 @@
-import pdb
-import time
 import math
 import torch
-import h5py
 import torch.nn as nn
-import torch.nn.init as init
-import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
-import torch.optim as optim
-from torch.autograd import Variable
-import numpy as np
-from src.codebase.utils.utils import log
-from src.codebase_pytorch.utils.dataset import Dataset
-from src.codebase_pytorch.utils.hooks import print_outputs, print_grads
-from src.codebase_pytorch.utils.scheduler import ReduceLROnPlateau
-from src.codebase_pytorch.utils.scheduler import LambdaLR
 from src.codebase_pytorch.models.model import Model
+import math
 
+import torch
+import torch.nn as nn
+
+from src.codebase_pytorch.models.model import Model
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -183,7 +174,7 @@ def resnet18(pretrained=False, **kwargs):
     model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
-        model.load_state_dict(torch.load(model_paths['resnet18']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -195,7 +186,7 @@ def resnet34(pretrained=False, **kwargs):
     model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['resnet34']))
-        model.load_state_dict(torch.load(model_paths['resnet34']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -207,7 +198,7 @@ def resnet50(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
-        model.load_state_dict(torch.load(model_paths['resnet50']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -219,7 +210,7 @@ def resnet101(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['resnet101']))
-        model.load_state_dict(torch.load(model_paths['resnet101']))
+        model.load_state_dict(torch.load(pretrained))
     return model
 
 
@@ -231,5 +222,5 @@ def resnet152(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['resnet152']))
-        model.load_state_dict(torch.load(model_paths['resnet152']))
+        model.load_state_dict(torch.load(pretrained))
     return model

@@ -1,6 +1,9 @@
-import pdb
 import numpy as np
 from src.codebase_pytorch.utils.dataset import Dataset
+import numpy as np
+
+from src.codebase_pytorch.utils.dataset import Dataset
+
 
 class RandomNoiseGenerator:
     '''
@@ -12,7 +15,6 @@ class RandomNoiseGenerator:
 
     def generate(self, data, model, args, fh=None):
         '''
-        Generate adversarial noise using fast gradient method.
 
         inputs:
             - images: n_images x im_size x im_size x n_channels

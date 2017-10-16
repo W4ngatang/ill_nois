@@ -7,6 +7,7 @@ import logging as log
 import argparse
 import numpy as np
 from scipy.misc import imsave
+import pickle
 
 # Helper stuff
 from src.codebase_pytorch.utils.dataset import Dataset
@@ -55,6 +56,7 @@ def main(arguments):
     parser.add_argument("--init_scale", help="Initialization scale (std around 0)", type=float, default=.1)
     parser.add_argument("--init_dist", help="Initialization distribution", type=str, default='normal')
     parser.add_argument("--load_model_from", help="Path to load model from. When loading a model, this argument must match the import model type.", type=str, default='')
+    parser.add_argument("--weights_dict", help="Path to (dictionary) pickle file containing the paths to weight files for every model")
     parser.add_argument("--save_model_to", help="Path to save model to", type=str, default='')
     parser.add_argument("--load_openface", help="Path to load pretrained openFace model from.", type=str, default='src/codebase_pytorch/models/openFace.ckpt')
 
@@ -141,53 +143,71 @@ def main(arguments):
     if args.use_cuda:
         log.debug("Using CUDA")
 
+    if args.weights_dict:
+        weights_dict = pickle.load(open(args.weights_dict, "rb"))
+
     # Build the model
     log.debug("Building model...")
     if args.model == 'modular':
         model = ModularCNN(args)
         log.debug("\tBuilt modular CNN with %d modules" % (args.n_modules))
+
     elif args.model == 'mnist':
         model = MNISTCNN(args)
         log.debug("\tBuilt MNIST CNN")
+
     elif args.model == 'squeeze':
         model = SqueezeNet(num_classes=args.n_classes)
         log.debug("\tBuilt SqueezeNet")
+
     elif args.model == 'openface':
         model = OpenFaceClassifier(args)
         log.debug("\tBuilt OpenFaceClassifier")
+
     elif args.model == 'resnet':
         model = ResNet(Bottleneck, [3, 8, 36, 3])
         log.debug("\tBuilt ResNet152")
+
     elif args.model == 'inception':
         model = Inception3(num_classes=args.n_classes)
         log.debug("\tBuilt Inception")
+
     elif args.model == 'densenet':
         model = DenseNet(num_init_features=96, growth_rate=48, block_config=(6, 12, 36, 24), **kwargs)
         log.debug("\tBuilt DenseNet161")
+
     elif args.model == 'alexnet':
         model = AlexNet()
         log.debug("\tBuilt AlexNet")
+
     elif args.model == 'vgg':
-        model = vgg19_bn(pretrained=True)
+        model = vgg19_bn(pretrained=weights_dict["vgg19_bn"])
         log.debug("\tBuilt VGG19bn")
+
     elif args.model == 'ensemble':
         holdout = args.ensemble_holdout
         models, model_strings = [], []
+
         if holdout != 'resnet152':
-            models.append(resnet152(pretrained=True))
+            models.append(resnet152(pretrained=weights_dict["resnet152"]))
             model_strings.append('resnet152')
+
         if holdout != 'densenet161':
-            models.append(densenet161(pretrained=True))
+            models.append(densenet161(pretrained=weights_dict["densenet161"]))
             model_strings.append('densenet161')
+
         if holdout != 'alexnet':
-            models.append(alexnet(pretrained=True))
+            models.append(alexnet(pretrained=weights_dict["alexnet"]))
             model_strings.append('alexnet')
+
         if holdout != 'vgg19bn':
-            models.append(vgg19_bn(pretrained=True))
+            models.append(vgg19_bn(pretrained=weights_dict["vgg19_bn"]))
             model_strings.append('vgg19bn')
+
         if holdout != 'squeezenet1_1':
-            models.append(squeezenet1_1(pretrained=True))
+            models.append(squeezenet1_1(pretrained=weights_dict["squeezenet1_1"]))
             model_strings.append('squeezenet1_1')
+
         if args.use_cuda: 
             models = [m.cuda() for m in models]
 
@@ -195,8 +215,10 @@ def main(arguments):
         log.debug("\tBuilt ensemble with %s" % ', '.join(model_strings))
     else:
         raise NotImplementedError
+
     if args.use_cuda:
         model.cuda()
+
     # Optional load model
     if args.load_model_from:
         model.load_state_dict(torch.load(args.load_model_from))
@@ -297,7 +319,6 @@ def main(arguments):
         if args.model == 'ensemble' and args.mwu_ensemble_weights:
             model.weight_experts(generator, te_data, args.n_mwu_steps, 
                                     args.mwu_penalty)
-
 
         # Generate the corrupt images
         # NB: noise will be in the normalized space,

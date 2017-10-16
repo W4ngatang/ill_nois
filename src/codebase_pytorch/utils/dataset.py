@@ -35,5 +35,5 @@ class Dataset:
 
     def __getitem__(self, idx):
         batch_size = self.batch_size
-        return (self.ins[idx*batch_size:(idx+1)*batch_size], 
-                self.outs[idx*batch_size:(idx+1)*batch_size])
+        return (self.ins[idx * batch_size: (idx + 1) * batch_size],
+                self.outs[idx * batch_size:(idx + 1) * batch_size])
