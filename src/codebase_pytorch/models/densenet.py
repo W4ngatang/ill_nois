@@ -31,7 +31,7 @@ def densenet121(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet121']))
-        model.load_state_dict(torch.load(pretrained))
+        model.load_state_dict(torch.load(model_paths['densenet121']))
     return model
 
 
@@ -45,7 +45,7 @@ def densenet169(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet169']))
-        model.load_state_dict(torch.load(pretrained))
+        model.load_state_dict(torch.load(model_paths['densenet169']))
     return model
 
 
@@ -59,7 +59,7 @@ def densenet201(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet201']))
-        model.load_state_dict(torch.load(pretrained))
+        model.load_state_dict(torch.load(model_paths['densenet201']))
     return model
 
 
@@ -73,7 +73,7 @@ def densenet161(pretrained=False, **kwargs):
                      **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['densenet161']))
-        model.load_state_dict(torch.load(pretrained))
+        model.load_state_dict(torch.load(model_paths['densenet161']))
     return model
 
 

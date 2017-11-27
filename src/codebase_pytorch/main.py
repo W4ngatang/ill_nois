@@ -30,7 +30,6 @@ from src.codebase_pytorch.generators.fgsm import FGSMGenerator
 from src.codebase_pytorch.generators.carlini_l2 import CarliniL2Generator
 from src.codebase_pytorch.generators.ensembler import EnsembleGenerator
 from src.codebase_pytorch.generators.optimizer import OptimizationGenerator
-from src.codebase_pytorch.generators.ensembler import EnsembleGenerator
 
 def main(arguments):
     '''
@@ -181,7 +180,7 @@ def main(arguments):
         log.debug("\tBuilt AlexNet")
 
     elif args.model == 'vgg':
-        model = vgg19_bn(pretrained=weights_dict["vgg19_bn"])
+        model = vgg19_bn(pretrained=True)
         log.debug("\tBuilt VGG19bn")
 
     elif args.model == 'ensemble':
@@ -189,23 +188,23 @@ def main(arguments):
         models, model_strings = [], []
 
         if holdout != 'resnet152':
-            models.append(resnet152(pretrained=weights_dict["resnet152"]))
+            models.append(resnet152(pretrained=True))
             model_strings.append('resnet152')
 
-        if holdout != 'densenet161':
-            models.append(densenet161(pretrained=weights_dict["densenet161"]))
+        if holdout != 'dense161':
+            models.append(densenet161(pretrained=True))
             model_strings.append('densenet161')
 
-        if holdout != 'alexnet':
-            models.append(alexnet(pretrained=weights_dict["alexnet"]))
+        if holdout != 'alex':
+            models.append(alexnet(pretrained=True))
             model_strings.append('alexnet')
 
         if holdout != 'vgg19bn':
-            models.append(vgg19_bn(pretrained=weights_dict["vgg19_bn"]))
+            models.append(vgg19_bn(pretrained=True))
             model_strings.append('vgg19bn')
 
-        if holdout != 'squeezenet1_1':
-            models.append(squeezenet1_1(pretrained=weights_dict["squeezenet1_1"]))
+        if holdout != 'squeeze1_1':
+            models.append(squeezenet1_1(pretrained=True))
             model_strings.append('squeezenet1_1')
 
         if args.use_cuda: 

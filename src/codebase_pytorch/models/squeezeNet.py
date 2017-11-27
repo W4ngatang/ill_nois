@@ -122,7 +122,7 @@ def squeezenet1_0(pretrained=False, **kwargs):
     model = SqueezeNet(version=1.0, **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['squeezenet1_0']))
-        model.load_state_dict(torch.load(pretrained))
+        model.load_state_dict(torch.load(model_paths['squeezenet1_0']))
     return model
 
 
@@ -137,5 +137,5 @@ def squeezenet1_1(pretrained=False, **kwargs):
     model = SqueezeNet(version=1.1, **kwargs)
     if pretrained:
         #model.load_state_dict(model_zoo.load_url(model_urls['squeezenet1_1']))
-        model.load_state_dict(torch.load(pretrained))
+        model.load_state_dict(torch.load(model_paths['squeezenet1_1']))
     return model
