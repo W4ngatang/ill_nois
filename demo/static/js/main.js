@@ -1,27 +1,37 @@
-$(function() {
-    $('#upload_btn').on('click', function() {
-        var fd = new FormData();
-        fd.append('file', $('input[type=file]')[0].files[0]);
-        $.ajax({
-            url: '/api/upload',
-            method: 'POST',
-            data: fd,
-            cache: false,
-            contentType: false,
-            processData: false
-        });
-    });
+function upload() {
+    var file_input = document.getElementById("upload");
+    var reader = new FileReader();
+    reader.onload = function (e) {
+        $('#image').attr('src', e.target.result);
+    }
+    reader.readAsDataURL(file_input.files[0]);
+}
 
-    $('#upload_im').change(function() {
-        if (this.files && this.files[0]) {
-            var reader = new FileReader();
-            reader.onload = function (e) {
-                $('#orig_im').attr('src', e.target.result);
-            }
-            reader.readAsDataURL(this.files[0]);
+function obfuscate() {
+    var im = document.getElementById('image');
+    var canvas = document.createElement('canvas');
+    canvas.width = im.width;
+    canvas.height = im.height;
+    canvas.getContext('2d').drawImage(im, 0, 0, im.width, im.height);
+    var data = canvas.getContext('2d').getImageData(0, 0, im.width, im.height).data;
+    var inputs = [canvas.width, canvas.height];
+    for (var i = 0; i < data.length; i+=4) {
+       inputs.push([data[i], data[i+1], data[i+2]]);
+    }
+    $.ajax({
+        // predict class for image
+        url: '/illnoise/api/v0.1/obfuscate',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(inputs),
+        success: function(data) {
+            $('#image').attr('src', data.obf_src);
         }
     });
+}
 
+
+$(function() {
     $('#orig_im').on('load', function () {
         var im = document.getElementById('orig_im');
         var canvas = document.createElement('canvas');
@@ -67,7 +77,7 @@ $(function() {
         $('#noise_im').attr('src', '');
     });
 
-    $('#obfuscate').on('click', function() {
+    $('#obfuscate_r').on('click', function() {
         var im = document.getElementById('orig_im');
         var canvas = document.createElement('canvas');
         canvas.width = im.width;

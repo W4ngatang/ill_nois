@@ -5,3 +5,7 @@ body {
 th {
     text-align: center;
 }
+
+hr {
+    border-top: 0;
+}

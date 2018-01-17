@@ -1,31 +1,29 @@
 import os
+import io
 import sys
 import pdb
 import string
-import h5py
-import boto3
+#import h5py
+#import boto3
 import base64
 import random
 import argparse
-import StringIO
-import torch
+#import torch
 import numpy as np
-import tensorflow as tf
+#import tensorflow as tf
 from scipy.misc import imread, imsave
 
 from flask import Flask, render_template, request, redirect, \
         send_from_directory, flash, url_for, jsonify, send_file
 from werkzeug.utils import secure_filename
 
-from src.codebase.models.simple_cnn import SimpleCNN
-from src.codebase.generators.fast_gradient import FastGradientGenerator
+#from src.codebase.models.simple_cnn import SimpleCNN
+#from src.codebase.generators.fast_gradient import FastGradientGenerator
 
 # constants
 API_NAME = 'illnoise'
 VERSION = 'v0.1'
 UPLOAD_FOLDER = 'demo/tmp'
-CELEB_IM_DIM = 128
-CIFAR_IM_DIM = 32
 
 # web app
 app = Flask(__name__)
@@ -38,17 +36,14 @@ def random_string(length=10):
     return ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
 def encode_arr(arr):
-    fh = StringIO.StringIO()
+    fh = io.BytesIO()
     imsave(fh, np.squeeze(arr), format='png')
-    return fh.getvalue().encode('base64')
+    base64_im = base64.b64encode(fh.getvalue())
+    return str(base64_im)[2:-1] # gets rid of b'...'
 
 @app.route('/')
 def index():
     return render_template('index.html')
-
-@app.route('/celeb')
-def celeb():
-    return render_template('celeb.html')
 
 ###################
 ### API METHODS ###
@@ -57,6 +52,7 @@ def celeb():
 
 @app.route('/%s/api/%s/obfuscate' % (API_NAME, VERSION), methods=['POST'])
 def obfuscate():
+    '''
     im = np.array(request.json).reshape((1,CIFAR_IM_DIM, CIFAR_IM_DIM,3)) / 255.
     true_class = np.argmax(model.predict(im)[0])
     noise = generator.generate((im, np.array([true_class])), model, args)
@@ -66,6 +62,11 @@ def obfuscate():
     return jsonify(preds=preds[0].tolist(),
         noise_src='data:image/png;base64,'+enc_noise,
         obf_src='data:image/png;base64,'+enc_im)
+    '''
+    height, width = request.json[0], request.json[1]
+    im = np.array(request.json[2:]).reshape((1, width, height, 3))
+    enc_im = encode_arr(np.random.randint(0, 2, im.shape))
+    return jsonify(obf_src='data:image/png;base64,'+enc_im)
 
 @app.route('/%s/api/%s/predict' % (API_NAME, VERSION), methods=['POST'])
 def predict():
@@ -139,7 +140,7 @@ if __name__ == '__main__':
     parser.add_argument("--load_model_from", help="Path to load model from. \
                                                     When loading a model, \
                                                     this argument must match \
-                                                    the import model type.", 
+                                                    the import model type.",
                                                     type=str, default='')
 
     # Training options
@@ -165,8 +166,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args(sys.argv[1:])
 
-    client = boto3.client(service_name='rekognition', region_name='us-east-1')
+    #client = boto3.client(service_name='rekognition', region_name='us-east-1')
 
+    '''
     if args.data_path[-1] != '/':
         args.data_path += '/'
     with h5py.File(args.data_path+'params.hdf5', 'r') as f:
@@ -178,6 +180,7 @@ if __name__ == '__main__':
     model = SimpleCNN(args)
     model.load_weights(args.load_model_from)
     print('Loaded model from %s' % args.load_model_from)
+    '''
 
     if args.run_local:
         app.run()
